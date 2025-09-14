@@ -15,10 +15,16 @@ import {
   Alert,
   Dimensions,
   Keyboard,
+  Image, // Import Image
+  Modal, // Import Modal for menu and fullscreen view
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import ThemeContext from '../context/ThemeContext';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+
+// To enable image picking, you need to install expo-image-picker
+// Run: npx expo install expo-image-picker
+import * as ImagePicker from 'expo-image-picker';
 
 
 import { db, auth } from '../Backend/firebaseConfig';
@@ -35,7 +41,8 @@ import {
   deleteDoc,
   where,
   getDocs,
-  writeBatch
+  writeBatch,
+  updateDoc // Import updateDoc
 } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 
@@ -53,16 +60,22 @@ const ChatScreen = () => {
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const flatListRef = useRef();
 
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [uploading, setUploading] = useState(false); 
+  const [imageModalVisible, setImageModalVisible] = useState(false);
+  const [viewingImage, setViewingImage] = useState(null);
+
+  // --- START: New state for Header Menu ---
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [chatThread, setChatThread] = useState(null); // To hold thread data like isMuted
+  // --- END: New state for Header Menu ---
+
   const colors = {
     background: isDarkMode ? '#0F0F23' : '#F8FAFC',
-    gradientStart: isDarkMode ? '#1A1A2E' : '#FFFFFF',
-    gradientEnd: isDarkMode ? '#16213E' : '#F1F5F9',
     card: isDarkMode ? '#1E1E3F' : '#FFFFFF',
     text: isDarkMode ? '#FFFFFF' : '#1E293B',
     subText: isDarkMode ? '#94A3B8' : '#64748B',
     primary: '#EC4899',
-    primaryLight: '#F472B6',
-    primaryDark: '#BE185D',
     secondary: '#8B5CF6',
     userBubble: '#EC4899',
     adminBubble: isDarkMode ? '#374151' : '#F1F5F9',
@@ -73,18 +86,14 @@ const ChatScreen = () => {
     shadow: isDarkMode ? '#000000' : '#64748B',
     online: '#10B981',
     border: isDarkMode ? '#374151' : '#E2E8F0',
+    menuBackground: isDarkMode ? '#2d3748' : '#ffffff',
   };
 
   const styles = getStyles(colors);
 
   useEffect(() => {
-    const keyboardDidShowListener = Keyboard.addListener('keyboardDidShow', () => {
-      setKeyboardVisible(true);
-    });
-    const keyboardDidHideListener = Keyboard.addListener('keyboardDidHide', () => {
-      setKeyboardVisible(false);
-    });
-
+    const keyboardDidShowListener = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
+    const keyboardDidHideListener = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
     return () => {
       keyboardDidHideListener?.remove();
       keyboardDidShowListener?.remove();
@@ -97,11 +106,7 @@ const ChatScreen = () => {
         setUser(currentUser);
         const userDocRef = doc(db, 'signup_users', currentUser.uid);
         const userDoc = await getDoc(userDocRef);
-        if (userDoc.exists()) {
-          setUserName(userDoc.data().fullName || 'User');
-        } else {
-          setUserName('User');
-        }
+        setUserName(userDoc.exists() ? userDoc.data().fullName || 'User' : 'User');
       } else {
         setUser(null);
         setLoading(false);
@@ -109,45 +114,47 @@ const ChatScreen = () => {
     });
     return () => unsubscribe();
   }, []);
+  
+  // --- START: New useEffect to listen to chat thread data (for mute status) ---
+  useEffect(() => {
+    if (user) {
+        const appId = 'flourish-flowers-app';
+        const chatThreadRef = doc(db, `artifacts/${appId}/public/data/chats/${user.uid}`);
+        const unsubscribe = onSnapshot(chatThreadRef, (doc) => {
+            if (doc.exists()) {
+                setChatThread(doc.data());
+            }
+        });
+        return () => unsubscribe();
+    }
+  }, [user]);
+  // --- END: New useEffect to listen to chat thread data ---
 
-  // --- START: Real-time Presence and Seen Logic ---
   useFocusEffect(
     useCallback(() => {
       if (user) {
         const appId = 'flourish-flowers-app';
         const chatThreadRef = doc(db, `artifacts/${appId}/public/data/chats/${user.uid}`);
-        
-        // Set user to online and mark as seen when screen is focused
         setDoc(chatThreadRef, { isOnline: true, isSeenByUser: true }, { merge: true });
 
-        // --- NEW: Mark all received admin messages as seen ---
         const markAdminMessagesAsSeen = async () => {
           const messagesRef = collection(db, `artifacts/${appId}/public/data/chats/${user.uid}/messages`);
           const q = query(messagesRef, where("senderId", "==", "flourish-admin"), where("isSeen", "==", false));
-          
-          try {
-            const querySnapshot = await getDocs(q);
-            const batch = writeBatch(db);
-            querySnapshot.forEach(document => {
-              batch.update(document.ref, { isSeen: true });
-            });
-            await batch.commit();
-          } catch (error) {
-            console.error("Error marking messages as seen: ", error);
-          }
+          const querySnapshot = await getDocs(q);
+          const batch = writeBatch(db);
+          querySnapshot.forEach(document => batch.update(document.ref, { isSeen: true }));
+          await batch.commit();
         };
 
-        markAdminMessagesAsSeen();
+        markAdminMessagesAsSeen().catch(error => console.error("Error marking messages as seen: ", error));
 
-        // Set user to offline when the screen is unfocused
         return () => {
           setDoc(chatThreadRef, { isOnline: false, lastSeen: serverTimestamp() }, { merge: true });
         };
       }
     }, [user])
   );
-  // --- END: Real-time Presence and Seen Logic ---
-
+  
   const sendWelcomeMessage = async () => {
     if (!user) return;
     const appId = 'flourish-flowers-app';
@@ -162,7 +169,7 @@ const ChatScreen = () => {
           senderId: 'flourish-admin', 
           senderName: 'Flourish',
           senderAvatar: 'F',
-          isSeen: false, // Admin message starts as unseen
+          isSeen: false,
         });
         setIsTyping(false);
       }, 1500);
@@ -182,15 +189,7 @@ const ChatScreen = () => {
         if (querySnapshot.empty) {
           sendWelcomeMessage();
         }
-        
-        const fetchedMessages = querySnapshot.docs.map(doc => {
-          const data = doc.data();
-          return {
-            id: doc.id,
-            ...data,
-            timestamp: data.timestamp?.toDate(),
-          };
-        });
+        const fetchedMessages = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), timestamp: doc.data().timestamp?.toDate() }));
         setMessages(fetchedMessages);
         setLoading(false);
       });
@@ -199,251 +198,187 @@ const ChatScreen = () => {
     }
   }, [user]);
 
-  const handleSend = async () => {
-    if (newMessage.trim() === '' || !user) return;
+  const uploadImageToCloudinary = async (uri) => {
+    const CLOUDINARY_URL = 'https://api.cloudinary.com/v1_1/djhtu0rzz/image/upload';
+    const UPLOAD_PRESET = 'my_app_preset';
+    const formData = new FormData();
+    let fileType = uri.substring(uri.lastIndexOf(".") + 1);
+    
+    formData.append('file', { uri, name: `photo.${fileType}`, type: `image/${fileType}` });
+    formData.append('upload_preset', UPLOAD_PRESET);
 
+    try {
+        const response = await fetch(CLOUDINARY_URL, { method: 'POST', body: formData, headers: { 'Content-Type': 'multipart/form-data' } });
+        const data = await response.json();
+        return data.secure_url || null;
+    } catch (error) {
+        console.error('Error uploading to Cloudinary:', error);
+        return null;
+    }
+  };
+
+  const handleSend = async () => {
+    if ((!newMessage.trim() && !selectedImage) || !user) return;
+
+    setUploading(true);
     const messageText = newMessage.trim();
+    let imageUrl = null;
+
+    if (selectedImage) {
+        imageUrl = await uploadImageToCloudinary(selectedImage);
+        if (!imageUrl) {
+            Alert.alert("Upload Failed", "Could not upload image. Please try again.");
+            setUploading(false);
+            return;
+        }
+    }
+    
     setNewMessage('');
+    setSelectedImage(null);
 
     const appId = 'flourish-flowers-app';
     const chatThreadRef = doc(db, `artifacts/${appId}/public/data/chats/${user.uid}`);
     const messagesRef = collection(chatThreadRef, 'messages');
     
     try {
-      await setDoc(chatThreadRef, {
-        lastMessage: messageText,
-        timestamp: serverTimestamp(),
-        userName: userName,
-        userAvatar: userName.substring(0, 2).toUpperCase(),
-        isRead: false, // Mark as unread for the admin
-        isSeenByUser: true, // User is active, so they've seen admin messages
-        lastMessageSenderId: user.uid, // Identify user as sender
-      }, { merge: true });
-
-      await addDoc(messagesRef, {
-        text: messageText,
-        timestamp: serverTimestamp(),
-        senderId: user.uid,
-        senderName: userName,
-        senderAvatar: userName.substring(0, 2).toUpperCase(),
-        isSeen: false, // Message starts as delivered but not seen
-      });
+      const messageData = { timestamp: serverTimestamp(), senderId: user.uid, senderName: userName, isSeen: false };
+      if (messageText) messageData.text = messageText;
+      if (imageUrl) messageData.imageUrl = imageUrl;
+      await addDoc(messagesRef, messageData);
       
+      let lastMessage = imageUrl ? (messageText ? `📷 ${messageText}` : '📷 Photo') : messageText;
+      
+      await setDoc(chatThreadRef, { lastMessage, timestamp: serverTimestamp(), userName, isRead: false, isSeenByUser: true, lastMessageSenderId: user.uid }, { merge: true });
     } catch (error) {
       console.error("Error sending message: ", error);
+    } finally {
+      setUploading(false);
     }
   };
   
-  const handleDeleteMessage = (messageId) => {
+  const handleImageUpload = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission Denied', 'Sorry, we need camera roll permissions to make this work!');
+      return;
+    }
+
+    let result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [4, 4], quality: 0.8 });
+    if (!result.canceled) {
+      setSelectedImage(result.assets[0].uri);
+    }
+  };
+  
+  // --- START: New Menu Action Handlers ---
+  const handleMuteToggle = async () => {
+    if (!user || !chatThread) return;
+    setMenuVisible(false);
+    const appId = 'flourish-flowers-app';
+    const chatThreadRef = doc(db, `artifacts/${appId}/public/data/chats/${user.uid}`);
+    try {
+      await updateDoc(chatThreadRef, { isMuted: !chatThread.isMuted });
+    } catch (error) {
+      console.error("Error toggling mute: ", error);
+      Alert.alert("Error", "Could not update mute status.");
+    }
+  };
+
+  const handleDeleteConversation = () => {
+    setMenuVisible(false);
     Alert.alert(
-      "Delete Message",
-      "Are you sure you want to delete this message?",
+      "Delete Conversation", "Are you sure you want to permanently delete this conversation?",
       [
-        {
-          text: "Cancel",
-          style: "cancel"
-        },
-        { 
-          text: "Delete", 
-          onPress: async () => {
+        { text: "Cancel", style: "cancel" },
+        { text: "Delete", style: 'destructive', onPress: async () => {
+            if (!user) return;
             const appId = 'flourish-flowers-app';
-            const messageDocRef = doc(db, `artifacts/${appId}/public/data/chats/${user.uid}/messages`, messageId);
+            const chatThreadRef = doc(db, `artifacts/${appId}/public/data/chats/${user.uid}`);
+            const messagesRef = collection(chatThreadRef, 'messages');
+
             try {
-              await deleteDoc(messageDocRef);
+              const messagesSnapshot = await getDocs(messagesRef);
+              const batch = writeBatch(db);
+              messagesSnapshot.forEach(doc => batch.delete(doc.ref));
+              await batch.commit();
+              await deleteDoc(chatThreadRef);
+              navigation.goBack();
             } catch (error) {
-              console.error("Error deleting message: ", error);
+              console.error("Error deleting conversation: ", error);
+              Alert.alert("Error", "Could not delete conversation.");
             }
-          },
-          style: 'destructive'
+          }
         }
       ]
     );
   };
+  // --- END: New Menu Action Handlers ---
 
-  const TypingIndicator = () => (
-    <View style={styles.typingContainer}>
-      <View style={styles.avatarContainer}>
-        <View style={styles.avatarGradient}>
-          <Text style={styles.avatarText}>F</Text>
-        </View>
-      </View>
-      <View style={styles.typingBubble}>
-        <View style={styles.typingDots}>
-          <View style={[styles.dot, styles.dot1]} />
-          <View style={[styles.dot, styles.dot2]} />
-          <View style={[styles.dot, styles.dot3]} />
-        </View>
-      </View>
-    </View>
-  );
-
-  const renderMessage = ({ item, index }) => {
-    const isUserMessage = item.senderId === user?.uid;
-    const isLastMessage = index === messages.length - 1;
-    
-    return (
-      <TouchableOpacity
-        onLongPress={() => isUserMessage && handleDeleteMessage(item.id)}
-        activeOpacity={0.7}
-      >
-        <View style={[
-          styles.messageRow, 
-          { justifyContent: isUserMessage ? 'flex-end' : 'flex-start' },
-          isLastMessage && styles.lastMessage
-        ]}>
-          {!isUserMessage && (
-            <View style={styles.avatarContainer}>
-              <View style={styles.avatarGradient}>
-                <Text style={styles.avatarText}>{item.senderAvatar || 'F'}</Text>
-              </View>
-            </View>
-          )}
-
-          <View style={[
-            styles.messageBubble, 
-            isUserMessage ? styles.userBubble : styles.adminBubble
-          ]}>
-            <Text 
-              style={isUserMessage ? styles.userBubbleText : styles.adminBubbleText}
-            >
-              {item.text || 'No message content'}
-            </Text>
-            <View style={[styles.timestampContainer, isUserMessage && styles.userTimestampContainer]}>
-              <Text style={[styles.timestamp, isUserMessage && styles.userTimestamp]}>
-                {item.timestamp ? item.timestamp.toLocaleTimeString([], { 
-                  hour: '2-digit', 
-                  minute: '2-digit' 
-                }) : 'Sending...'}
-              </Text>
-              {/* --- NEW: Delivery/Seen Status Icon --- */}
-              {isUserMessage && (
-                <Icon
-                  name={item.isSeen ? 'check-all' : 'check'}
-                  size={15}
-                  color={isDarkMode ? 'rgba(255,255,255,0.8)' : '#FFFFFF'}
-                  style={styles.checkIcon}
-                />
-              )}
-            </View>
-          </View>
-
-          {isUserMessage && (
-            <View style={styles.userAvatarContainer}>
-              <View style={styles.userAvatarGradient}>
-                <Text style={styles.avatarText}>
-                  {userName.substring(0, 1).toUpperCase()}
-                </Text>
-              </View>
-            </View>
-          )}
-        </View>
-      </TouchableOpacity>
-    );
+  const openImageModal = (imageUrl) => {
+    setViewingImage(imageUrl);
+    setImageModalVisible(true);
   };
 
-  const handleImageUpload = () => {
-    console.log('Image upload button pressed!');
+  const renderMessage = ({ item }) => {
+    const isUserMessage = item.senderId === user?.uid;
+    return (
+      <View style={[ styles.messageRow, { justifyContent: isUserMessage ? 'flex-end' : 'flex-start' }]}>
+        {!isUserMessage && <View style={styles.avatarContainer}><View style={styles.avatarGradient}><Text style={styles.avatarText}>{item.senderAvatar || 'F'}</Text></View></View>}
+        <View style={[ styles.messageBubble, isUserMessage ? styles.userBubble : styles.adminBubble ]}>
+          {item.imageUrl && <TouchableOpacity onPress={() => openImageModal(item.imageUrl)}><Image source={{ uri: item.imageUrl }} style={styles.chatImage} resizeMode="cover" /></TouchableOpacity>}
+          {item.text && <Text style={isUserMessage ? styles.userBubbleText : styles.adminBubbleText}>{item.text}</Text>}
+          <View style={styles.timestampContainer}>
+            <Text style={[styles.timestamp, isUserMessage && styles.userTimestamp]}>{item.timestamp ? item.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Sending...'}</Text>
+            {isUserMessage && <Icon name={item.isSeen ? 'check-all' : 'check'} size={15} color={isDarkMode ? 'rgba(255,255,255,0.8)' : '#FFFFFF'} style={styles.checkIcon} />}
+          </View>
+        </View>
+        {isUserMessage && <View style={styles.userAvatarContainer}><View style={styles.userAvatarGradient}><Text style={styles.avatarText}>{userName.substring(0, 1).toUpperCase()}</Text></View></View>}
+      </View>
+    );
   };
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
-        {/* Enhanced Header */}
-        <View style={styles.header}>
-          <TouchableOpacity 
-            onPress={() => navigation.goBack()}
-            style={styles.backButton}
-          >
-            <Icon name="arrow-left" size={24} color={colors.text} />
-          </TouchableOpacity>
-          
-          <View style={styles.headerInfo}>
-            <View style={styles.headerAvatarContainer}>
-              <View style={styles.headerAvatarGradient}>
-                <Icon name="flower" size={20} color="#FFFFFF" />
-              </View>
-              <View style={styles.onlineIndicator} />
+      <Modal visible={imageModalVisible} transparent={true} onRequestClose={() => setImageModalVisible(false)} animationType="fade">
+        <View style={styles.modalContainer}><TouchableOpacity style={styles.closeButton} onPress={() => setImageModalVisible(false)}><Icon name="close" size={30} color="#fff" /></TouchableOpacity><Image source={{ uri: viewingImage }} style={styles.fullscreenImage} resizeMode="contain" /></View>
+      </Modal>
+      
+      {/* --- START: Menu Modal --- */}
+      <Modal visible={menuVisible} transparent={true} onRequestClose={() => setMenuVisible(false)} animationType="fade">
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPressOut={() => setMenuVisible(false)}>
+            <View style={styles.menuContainer}>
+                <TouchableOpacity style={styles.menuItem} onPress={handleMuteToggle}>
+                    <Icon name={chatThread?.isMuted ? "bell" : "bell-off"} size={20} color={colors.text} style={styles.menuIcon}/>
+                    <Text style={styles.menuText}>{chatThread?.isMuted ? "Unmute" : "Mute"} Conversation</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.menuItem} onPress={handleDeleteConversation}>
+                    <Icon name="trash-can-outline" size={20} color={colors.primary} style={styles.menuIcon}/>
+                    <Text style={[styles.menuText, { color: colors.primary }]}>Delete Conversation</Text>
+                </TouchableOpacity>
             </View>
-            <View style={styles.headerTextContainer}>
-              <Text style={styles.headerTitle}>Flourish Flowers</Text>
-              <Text style={styles.headerSubtitle}>
-                {isTyping ? 'typing...' : 'Online • Usually replies instantly'}
-              </Text>
-            </View>
-          </View>
+        </TouchableOpacity>
+      </Modal>
+      {/* --- END: Menu Modal --- */}
 
-          <TouchableOpacity style={styles.moreButton}>
-            <Icon name="dots-vertical" size={24} color={colors.text} />
-          </TouchableOpacity>
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}><Icon name="arrow-left" size={24} color={colors.text} /></TouchableOpacity>
+          <View style={styles.headerInfo}>
+            <View style={styles.headerAvatarContainer}><View style={styles.headerAvatarGradient}><Icon name="flower" size={20} color="#FFFFFF" /></View><View style={styles.onlineIndicator} /></View>
+            <View style={styles.headerTextContainer}><Text style={styles.headerTitle}>Flourish Flowers</Text><Text style={styles.headerSubtitle}>{isTyping ? 'typing...' : 'Online'}</Text></View>
+          </View>
+          <TouchableOpacity style={styles.moreButton} onPress={() => setMenuVisible(true)}><Icon name="dots-vertical" size={24} color={colors.text} /></TouchableOpacity>
         </View>
 
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={styles.chatContainer}
-          keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
-        >
-          {loading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={colors.primary} />
-              <Text style={styles.loadingText}>Loading messages...</Text>
-            </View>
-          ) : (
-            <>
-              <FlatList
-                ref={flatListRef}
-                data={messages}
-                renderItem={renderMessage}
-                keyExtractor={(item) => item.id}
-                contentContainerStyle={styles.messageList}
-                showsVerticalScrollIndicator={false}
-                onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-                onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
-              />
-              {isTyping && <TypingIndicator />}
-            </>
-          )}
-          
-          {/* Enhanced Input Container */}
-          <View style={[
-            styles.inputOuterContainer,
-            keyboardVisible && styles.inputOuterContainerKeyboard
-          ]}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.chatContainer} keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}>
+          {loading ? <View style={styles.loadingContainer}><ActivityIndicator size="large" color={colors.primary} /></View> : <FlatList ref={flatListRef} data={messages} renderItem={renderMessage} keyExtractor={(item) => item.id} contentContainerStyle={styles.messageList} onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })} onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })} />}
+          <View style={[ styles.inputOuterContainer, keyboardVisible && styles.inputOuterContainerKeyboard ]}>
+            {selectedImage && <View style={styles.previewContainer}><Image source={{ uri: selectedImage }} style={styles.previewImage} /><TouchableOpacity style={styles.removeImageButton} onPress={() => setSelectedImage(null)}><Icon name="close-circle" size={24} color="#000" /></TouchableOpacity></View>}
             <View style={styles.inputContainer}>
-              <TextInput
-                style={styles.input}
-                value={newMessage}
-                onChangeText={setNewMessage}
-                placeholder="Type your message..."
-                placeholderTextColor={colors.subText}
-                multiline
-              />
-              
+              <TextInput style={styles.input} value={newMessage} onChangeText={setNewMessage} placeholder="Type a message..." placeholderTextColor={colors.subText} multiline />
               <View style={styles.inputActions}>
-                <TouchableOpacity 
-                  style={styles.attachButton} 
-                  onPress={handleImageUpload}
-                >
-                  <Icon name="attachment" size={22} color={colors.subText} />
-                </TouchableOpacity>
-                
-                <TouchableOpacity 
-                  style={[
-                    styles.sendButton,
-                    newMessage.trim() && styles.sendButtonActive
-                  ]} 
-                  onPress={handleSend}
-                  disabled={!newMessage.trim()}
-                >
-                  <View style={[
-                    styles.sendButtonGradient,
-                    newMessage.trim() && styles.sendButtonGradientActive
-                  ]}>
-                    <Icon 
-                      name={newMessage.trim() ? "send" : "send-outline"} 
-                      size={20} 
-                      color="#FFFFFF" 
-                    />
-                  </View>
+                <TouchableOpacity style={styles.attachButton} onPress={handleImageUpload} disabled={uploading}><Icon name="attachment" size={22} color={colors.subText} /></TouchableOpacity>
+                <TouchableOpacity style={[ styles.sendButton, (newMessage.trim() || selectedImage) && styles.sendButtonActive ]} onPress={handleSend} disabled={(!newMessage.trim() && !selectedImage) || uploading}>
+                  <View style={[ styles.sendButtonGradient, (newMessage.trim() || selectedImage) && styles.sendButtonGradientActive ]}>{uploading ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Icon name={(newMessage.trim() || selectedImage) ? "send" : "send-outline"} size={20} color="#FFFFFF" />}</View>
                 </TouchableOpacity>
               </View>
             </View>
@@ -455,263 +390,89 @@ const ChatScreen = () => {
 };
 
 const getStyles = (colors) => StyleSheet.create({
-  safeArea: { 
-    flex: 1, 
-    backgroundColor: colors.background 
-  },
-  container: { 
+  safeArea: { flex: 1, backgroundColor: colors.background },
+  container: { flex: 1, backgroundColor: colors.background },
+  header: { paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight + 10 : 10, paddingBottom: 15, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.card, borderBottomLeftRadius: 25, borderBottomRightRadius: 25, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 5 },
+  backButton: { padding: 8, borderRadius: 20, backgroundColor: colors.background },
+  headerInfo: { flex: 1, flexDirection: 'row', alignItems: 'center', marginLeft: 15 },
+  headerAvatarContainer: { position: 'relative', marginRight: 12 },
+  headerAvatarGradient: { width: 42, height: 42, borderRadius: 21, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.primary },
+  onlineIndicator: { position: 'absolute', bottom: 2, right: 2, width: 14, height: 14, borderRadius: 7, backgroundColor: colors.online, borderWidth: 3, borderColor: colors.card },
+  headerTextContainer: { flex: 1 },
+  headerTitle: { fontSize: 18, fontWeight: 'bold', color: colors.text, marginBottom: 2 },
+  headerSubtitle: { fontSize: 13, color: colors.subText, fontWeight: '500' },
+  moreButton: { padding: 8, borderRadius: 20, backgroundColor: colors.background },
+  chatContainer: { flex: 1, marginTop: 10 },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  messageList: { padding: 20, flexGrow: 1, paddingBottom: 10 },
+  messageRow: { flexDirection: 'row', marginVertical: 4, alignItems: 'flex-end' },
+  avatarContainer: { marginRight: 10, marginBottom: 5 },
+  userAvatarContainer: { marginLeft: 10, marginBottom: 5 },
+  avatarGradient: { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.primary },
+  userAvatarGradient: { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.secondary },
+  avatarText: { color: '#FFFFFF', fontSize: 14, fontWeight: 'bold' },
+  messageBubble: { padding: 8, borderRadius: 20, maxWidth: width * 0.7 },
+  userBubble: { backgroundColor: colors.userBubble, borderBottomRightRadius: 6 },
+  adminBubble: { backgroundColor: colors.adminBubble, borderBottomLeftRadius: 6 },
+  userBubbleText: { color: colors.userBubbleText, fontSize: 16, lineHeight: 22, paddingHorizontal: 8, paddingVertical: 4 },
+  adminBubbleText: { color: colors.adminBubbleText, fontSize: 16, lineHeight: 22, paddingHorizontal: 8, paddingVertical: 4 },
+  timestampContainer: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-end', marginTop: 4, paddingHorizontal: 8 },
+  timestamp: { fontSize: 11, color: colors.subText, opacity: 0.7 },
+  userTimestamp: { color: 'rgba(255,255,255,0.8)' },
+  checkIcon: { marginLeft: 5 },
+  inputOuterContainer: { paddingHorizontal: 20, paddingVertical: 15, backgroundColor: colors.card, borderTopLeftRadius: 25, borderTopRightRadius: 25 },
+  inputOuterContainerKeyboard: { paddingBottom: Platform.OS === 'ios' ? 15 : 10 },
+  inputContainer: { flexDirection: 'row', alignItems: 'flex-end', backgroundColor: colors.inputBackground, borderRadius: 25, borderWidth: 1, borderColor: colors.inputBorder, paddingHorizontal: 15, paddingVertical: 8, minHeight: 50 },
+  input: { flex: 1, fontSize: 16, color: colors.text, paddingTop: Platform.OS === 'ios' ? 8 : 0, paddingBottom: Platform.OS === 'ios' ? 8 : 0, maxHeight: 100 },
+  inputActions: { flexDirection: 'row', alignItems: 'center', marginLeft: 5 },
+  attachButton: { padding: 8, marginRight: 5 },
+  sendButton: { padding: 2 },
+  sendButtonGradient: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.subText },
+  sendButtonGradientActive: { backgroundColor: colors.primary },
+  chatImage: { width: width * 0.6, height: width * 0.6, borderRadius: 15, margin: 2 },
+  previewContainer: { position: 'relative', marginBottom: 10, alignSelf: 'flex-start' },
+  previewImage: { width: 80, height: 80, borderRadius: 10 },
+  removeImageButton: { position: 'absolute', top: -10, right: -10, backgroundColor: 'white', borderRadius: 12 },
+  modalContainer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center' },
+  fullscreenImage: { width: width, height: height * 0.8 },
+  closeButton: { position: 'absolute', top: 50, right: 20, zIndex: 1 },
+  // --- START: New Menu Styles ---
+  modalOverlay: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-start',
+    alignItems: 'flex-end',
   },
-  header: {
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight + 10 : 10,
-    paddingBottom: 15,
-    paddingHorizontal: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: colors.card,
-    borderBottomLeftRadius: 25,
-    borderBottomRightRadius: 25,
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  backButton: {
+  menuContainer: {
+    position: 'absolute',
+    top: Platform.OS === 'android' ? StatusBar.currentHeight + 60 : 100,
+    right: 20,
+    backgroundColor: colors.menuBackground,
+    borderRadius: 12,
     padding: 8,
-    borderRadius: 20,
-    backgroundColor: colors.background,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+    width: 220,
   },
-  headerInfo: {
-    flex: 1,
+  menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+  },
+  menuText: {
+    color: colors.text,
+    fontSize: 16,
     marginLeft: 15,
   },
-  headerAvatarContainer: {
-    position: 'relative',
-    marginRight: 12,
-  },
-  headerAvatarGradient: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: colors.primary,
-  },
-  onlineIndicator: {
-    position: 'absolute',
-    bottom: 2,
-    right: 2,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: colors.online,
-    borderWidth: 3,
-    borderColor: colors.card,
-  },
-  headerTextContainer: {
-    flex: 1,
-  },
-  headerTitle: { 
-    fontSize: 18, 
-    fontWeight: 'bold', 
-    color: colors.text,
-    marginBottom: 2,
-  },
-  headerSubtitle: {
-    fontSize: 13,
-    color: colors.subText,
-    fontWeight: '500',
-  },
-  moreButton: {
-    padding: 8,
-    borderRadius: 20,
-    backgroundColor: colors.background,
-  },
-  chatContainer: { 
-    flex: 1,
-    marginTop: 10,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 10,
-    color: colors.subText,
-    fontSize: 16,
-  },
-  messageList: { 
-    padding: 20, 
-    flexGrow: 1,
-    paddingBottom: 10,
-  },
-  messageRow: { 
-    flexDirection: 'row', 
-    marginVertical: 4,
-    alignItems: 'flex-end',
-  },
-  lastMessage: {
-    marginBottom: 10,
-  },
-  avatarContainer: {
-    marginRight: 10,
-    marginBottom: 5,
-  },
-  userAvatarContainer: {
-    marginLeft: 10,
-    marginBottom: 5,
-  },
-  avatarGradient: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: colors.primary,
-  },
-  userAvatarGradient: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: colors.secondary,
-  },
-  avatarText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  messageBubble: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 20,
-    maxWidth: width * 0.7,
-  },
-  userBubble: { 
-    backgroundColor: colors.userBubble,
-    borderBottomRightRadius: 6,
-  },
-  adminBubble: { 
-    backgroundColor: colors.adminBubble,
-    borderBottomLeftRadius: 6,
-  },
-  userBubbleText: { 
-    color: colors.userBubbleText, 
-    fontSize: 16,
-    lineHeight: 22,
-  },
-  adminBubbleText: { 
-    color: colors.adminBubbleText, 
-    fontSize: 16,
-    lineHeight: 22,
-  },
-  timestampContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-end',
-    marginTop: 4,
-  },
-  userTimestampContainer: {
-    // No specific styles needed, just aligns items for user
-  },
-  timestamp: { 
-    fontSize: 11, 
-    color: colors.subText,
-    opacity: 0.7,
-  },
-  userTimestamp: {
-    color: 'rgba(255,255,255,0.8)',
-  },
-  checkIcon: {
-    marginLeft: 5,
-  },
-  typingContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    paddingHorizontal: 20,
-    paddingBottom: 10,
-  },
-  typingBubble: {
-    backgroundColor: colors.adminBubble,
-    borderRadius: 20,
-    borderBottomLeftRadius: 6,
-    padding: 16,
-    marginLeft: 10,
-  },
-  typingDots: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.subText,
-    marginHorizontal: 2,
-  },
-  dot1: {},
-  dot2: {},
-  dot3: {},
-  inputOuterContainer: {
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-    backgroundColor: colors.card,
-    borderTopLeftRadius: 25,
-    borderTopRightRadius: 25,
-  },
-  inputOuterContainerKeyboard: {
-    paddingBottom: Platform.OS === 'ios' ? 15 : 10,
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    backgroundColor: colors.inputBackground,
-    borderRadius: 25,
-    borderWidth: 1,
-    borderColor: colors.inputBorder,
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    minHeight: 50,
-  },
-  input: {
-    flex: 1,
-    fontSize: 16,
-    color: colors.text,
-    paddingTop: Platform.OS === 'ios' ? 8 : 0,
-    paddingBottom: Platform.OS === 'ios' ? 8 : 0,
-    maxHeight: 100,
-  },
-  inputActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginLeft: 5,
-  },
-  attachButton: {
-    padding: 8,
-    marginRight: 5,
-  },
-  sendButton: {
-    padding: 2,
-  },
-  sendButtonGradient: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: colors.subText,
-  },
-  sendButtonGradientActive: {
-    backgroundColor: colors.primary,
-  },
-  sendButtonActive: {},
+  menuIcon: {
+    width: 24,
+  }
+  // --- END: New Menu Styles ---
 });
 
 export default ChatScreen;
+
