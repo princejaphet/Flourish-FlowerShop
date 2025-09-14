@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "MyBlankApp",
+    "slug": "MyBlankApp",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/flourish.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/flourish.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/flourish.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true
+    },
+    "web": {
+      "favicon": "./assets/flourish.png"
+    }
+  }
+}

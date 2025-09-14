@@ -1,0 +1,19 @@
+@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Ensure html, body, and the #root div fill the entire viewport */
+html, body, #root {
+  width: 100%;
+  height: 100%; /* Make them fill the height too */
+  margin: 0; /* Remove default browser margins */
+  padding: 0; /* Remove default browser padding */
+  overflow-x: hidden; /* Prevent horizontal scrollbars */
+  font-family: "Inter", sans-serif; /* Keep consistent font */
+}
+
+body {
+  min-height: 100vh; /* Ensure body is at least viewport height */
+}
+
