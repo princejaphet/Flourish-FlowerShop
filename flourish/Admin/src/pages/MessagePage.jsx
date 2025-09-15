@@ -1,51 +1,15 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { 
-  MailOpen, 
-  Inbox, 
-  Send, 
-  MoreHorizontal, 
-  Bell, 
-  BellOff, 
-  Trash2, 
-  X, 
-  Search, 
-  Smile, 
-  Paperclip, 
-  MessageCircle, 
-  Clock,
-  Users,
-  Filter,
-  Archive,
-  Star,
-  StarOff,
-  Check, // NEW: Icon for delivered
-  CheckCheck, // NEW: Icon for seen
-  MessageSquare,
-  Calendar,
-  Zap,
-  TrendingUp,
-  Eye,
-  Reply,
-  Loader2 // For upload indicator
+import {
+  MailOpen, Send, MoreHorizontal, Bell, BellOff, Trash2, X, Search,
+  Smile, Paperclip, MessageCircle, Zap, TrendingUp, Loader2, AlertCircle, Archive
 } from 'lucide-react';
 import { db } from '../firebase';
-import { 
-  collection, 
-  query, 
-  onSnapshot, 
-  orderBy, 
-  addDoc, 
-  serverTimestamp, 
-  doc, 
-  setDoc, 
-  deleteDoc, 
-  updateDoc, 
-  getDocs,
-  where,
-  writeBatch
+import {
+  collection, query, onSnapshot, orderBy, addDoc, serverTimestamp, doc, setDoc,
+  deleteDoc, updateDoc, getDocs, where, writeBatch,
+  deleteField
 } from 'firebase/firestore';
 
-// Enhanced Stats Card Component
 const StatsCard = ({ title, value, icon, trend = null, color = "red" }) => (
   <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all duration-300 group">
     <div className="flex items-center justify-between">
@@ -80,12 +44,13 @@ export default function MessagePage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState('all');
   const messagesEndRef = useRef(null);
-
-  // --- START: New State for Image Handling ---
   const [imageFile, setImageFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef(null);
-  // --- END: New State for Image Handling ---
+
+  const [reactionPopoverId, setReactionPopoverId] = useState(null);
+  const availableReactions = ['😂', '👍', '❤️'];
+
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -98,15 +63,16 @@ export default function MessagePage() {
   useEffect(() => {
     const appId = 'flourish-flowers-app';
     const chatsRef = collection(db, `artifacts/${appId}/public/data/chats`);
-    const q = query(chatsRef, orderBy('timestamp', 'desc'));
+    const q = query(chatsRef, where("isHiddenForAdmin", "!=", true), orderBy('timestamp', 'desc'));
 
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const threads = querySnapshot.docs.map(doc => {
         const data = doc.data();
-        return { 
-          id: doc.id, 
+        return {
+          id: doc.id,
           ...data,
           userName: data.userName || data.senderName || data.customerName || data.name || 'Unknown User',
+          userAvatar: data.userAvatar || null,
           isOnline: data.isOnline || false,
           lastSeen: data.lastSeen || null,
           isSeenByUser: data.isSeenByUser,
@@ -121,15 +87,15 @@ export default function MessagePage() {
   }, []);
 
   const handleThreadSelect = async (thread) => {
+    if (selectedThread?.id === thread.id) return;
     setSelectedThread(thread);
     const appId = 'flourish-flowers-app';
     const threadRef = doc(db, `artifacts/${appId}/public/data/chats`, thread.id);
-    
-    // Mark the entire thread as read by the admin
+
     if (!thread.isRead) {
       await setDoc(threadRef, { isRead: true }, { merge: true });
     }
-    
+
     const messagesRef = collection(db, `artifacts/${appId}/public/data/chats/${thread.id}/messages`);
     const q = query(messagesRef, where("senderId", "==", thread.id), where("isSeen", "==", false));
 
@@ -160,12 +126,11 @@ export default function MessagePage() {
         setMessages(fetchedMessages);
         setLoadingMessages(false);
       });
-      
+
       return () => unsubscribe();
     }
   }, [selectedThread]);
 
-  // --- START: New Cloudinary Upload Function ---
   const uploadImageToCloudinary = async (file) => {
     const CLOUDINARY_URL = 'https://api.cloudinary.com/v1_1/djhtu0rzz/image/upload';
     const UPLOAD_PRESET = 'my_app_preset';
@@ -185,9 +150,7 @@ export default function MessagePage() {
         return null;
     }
   };
-  // --- END: New Cloudinary Upload Function ---
 
-  // --- START: Updated handleSendReply Function ---
   const handleSendReply = async () => {
     if ((replyContent.trim() === '' && !imageFile) || !selectedThread) return;
 
@@ -206,7 +169,7 @@ export default function MessagePage() {
     const appId = 'flourish-flowers-app';
     const chatThreadRef = doc(db, `artifacts/${appId}/public/data/chats/${selectedThread.id}`);
     const messagesRef = collection(chatThreadRef, 'messages');
-    
+
     const messageData = {
       timestamp: serverTimestamp(),
       senderId: 'flourish-admin',
@@ -216,9 +179,9 @@ export default function MessagePage() {
 
     if (replyContent.trim()) messageData.text = replyContent.trim();
     if (imageUrl) messageData.imageUrl = imageUrl;
-    
+
     await addDoc(messagesRef, messageData);
-    
+
     let lastMessage = replyContent.trim();
     if (imageUrl && !lastMessage) lastMessage = '📷 Photo';
     if (imageUrl && lastMessage) lastMessage = `📷 ${lastMessage}`;
@@ -226,7 +189,7 @@ export default function MessagePage() {
     await setDoc(chatThreadRef, {
       lastMessage: lastMessage,
       timestamp: serverTimestamp(),
-      isRead: true, 
+      isRead: true,
       isSeenByUser: false,
       lastMessageSenderId: 'flourish-admin',
     }, { merge: true });
@@ -235,9 +198,7 @@ export default function MessagePage() {
     setImageFile(null);
     setIsUploading(false);
   };
-  // --- END: Updated handleSendReply Function ---
-  
-  // --- START: New File Select Handler ---
+
   const handleFileSelect = (event) => {
     if (event.target.files && event.target.files[0]) {
       const file = event.target.files[0];
@@ -248,26 +209,21 @@ export default function MessagePage() {
       setImageFile(file);
     }
   };
-  // --- END: New File Select Handler ---
 
-  const handleDeleteConversation = async () => {
+  const handleArchiveConversation = async () => {
     if (!selectedThread) return;
     const appId = 'flourish-flowers-app';
     const chatThreadRef = doc(db, `artifacts/${appId}/public/data/chats/${selectedThread.id}`);
-    const messagesRef = collection(chatThreadRef, 'messages');
 
     try {
-        const messagesSnapshot = await getDocs(messagesRef);
-        const deletePromises = messagesSnapshot.docs.map((messageDoc) => deleteDoc(messageDoc.ref));
-        await Promise.all(deletePromises);
-        await deleteDoc(chatThreadRef);
+        await updateDoc(chatThreadRef, { isHiddenForAdmin: true });
 
         setSelectedThread(null);
         setDeleteModalVisible(false);
         setMenuOpen(false);
     } catch (error) {
-        console.error("Error permanently deleting conversation: ", error);
-        alert("Could not delete conversation. Check console for errors.");
+        console.error("Error archiving conversation: ", error);
+        alert("Could not archive conversation. Check console for errors.");
     }
   };
 
@@ -277,6 +233,26 @@ export default function MessagePage() {
     const chatThreadRef = doc(db, `artifacts/${appId}/public/data/chats/${selectedThread.id}`);
     await updateDoc(chatThreadRef, { isMuted: !selectedThread.isMuted });
     setMenuOpen(false);
+  };
+
+  const handleAdminReaction = async (message, emoji) => {
+    if (!selectedThread) return;
+    const appId = 'flourish-flowers-app';
+    const messageRef = doc(db, `artifacts/${appId}/public/data/chats/${selectedThread.id}/messages`, message.id);
+
+    const adminKey = 'flourish-admin';
+    const currentReaction = message.reactions?.[adminKey];
+
+    try {
+        if (currentReaction === emoji) {
+            await updateDoc(messageRef, { [`reactions.${adminKey}`]: deleteField() });
+        } else {
+            await updateDoc(messageRef, { [`reactions.${adminKey}`]: emoji });
+        }
+    } catch (error) {
+        console.error("Error updating admin reaction:", error);
+    }
+    setReactionPopoverId(null);
   };
 
   const filteredThreads = useMemo(() => {
@@ -301,7 +277,7 @@ export default function MessagePage() {
     if (days < 7) return `${days}d ago`;
     return date.toLocaleDateString();
   };
-  
+
   const stats = useMemo(() => {
     const totalThreads = chatThreads.length;
     const unreadThreads = chatThreads.filter(thread => !thread.isRead).length;
@@ -321,7 +297,6 @@ export default function MessagePage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      {/* Header Section */}
       <div className="bg-white border-b border-slate-200 p-6">
         <div className="flex justify-between items-center mb-6">
           <div>
@@ -340,11 +315,11 @@ export default function MessagePage() {
       {isDeleteModalVisible && (
         <div className="fixed inset-0 bg-black/20 flex justify-center items-center z-50">
           <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-md mx-4 border border-slate-200">
-            <h2 className="text-lg font-semibold text-gray-900">Delete Conversation</h2>
-            <p className="text-gray-600 my-4">Are you sure? This action cannot be undone.</p>
+            <h2 className="text-lg font-semibold text-gray-900">Archive Conversation</h2>
+            <p className="text-gray-600 my-4">This will hide the conversation from your view, but the user will still see their message history. Are you sure?</p>
             <div className="flex gap-2 justify-end">
               <button onClick={() => setDeleteModalVisible(false)} className="px-4 py-2 bg-gray-100 rounded">Cancel</button>
-              <button onClick={handleDeleteConversation} className="px-4 py-2 bg-red-500 text-white rounded">Delete</button>
+              <button onClick={handleArchiveConversation} className="px-4 py-2 bg-red-500 text-white rounded">Archive</button>
             </div>
           </div>
         </div>
@@ -359,11 +334,17 @@ export default function MessagePage() {
           </div>
         </div>
         <div className="flex-1 overflow-y-auto min-h-0">
-          {loadingThreads ? <div className="p-8 text-center"><Loader2 className="w-6 h-6 animate-spin text-red-500 mx-auto" /></div> : 
+          {loadingThreads ? <div className="p-8 text-center"><Loader2 className="w-6 h-6 animate-spin text-red-500 mx-auto" /></div> :
             filteredThreads.map(thread => (
               <button key={thread.id} onClick={() => handleThreadSelect(thread)} className={`flex items-center gap-4 p-4 hover:bg-red-50/70 text-left w-full ${ selectedThread?.id === thread.id ? 'bg-red-50' : '' }`}>
                 <div className="relative">
-                  <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center"><span className="text-red-600 text-sm font-semibold">{getInitials(thread.userName)}</span></div>
+                  {thread.userAvatar ? (
+                    <img src={thread.userAvatar} alt={thread.userName} className="w-12 h-12 rounded-full object-cover" />
+                  ) : (
+                    <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
+                      <span className="text-red-600 text-sm font-semibold">{getInitials(thread.userName)}</span>
+                    </div>
+                  )}
                   {!thread.isRead && (<div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white"></div>)}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -382,7 +363,16 @@ export default function MessagePage() {
             <div className="p-6 border-b border-slate-200">
               <div className="flex justify-between items-center">
                 <div className="flex items-center gap-4">
-                  <div className="relative"><div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center"><span className="text-red-600 text-sm font-semibold">{getInitials(selectedThread.userName)}</span></div><div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white ${selectedThread.isOnline ? 'bg-green-500' : 'bg-slate-400'}`}></div></div>
+                  <div className="relative">
+                    {selectedThread.userAvatar ? (
+                      <img src={selectedThread.userAvatar} alt={selectedThread.userName} className="w-12 h-12 rounded-full object-cover" />
+                    ) : (
+                      <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
+                        <span className="text-red-600 text-sm font-semibold">{getInitials(selectedThread.userName)}</span>
+                      </div>
+                    )}
+                    <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white ${selectedThread.isOnline ? 'bg-green-500' : 'bg-slate-400'}`}></div>
+                  </div>
                   <div><h3 className="font-semibold text-slate-900 text-lg">{selectedThread.userName}</h3><div className="text-sm text-slate-500">{selectedThread.isOnline ? 'Active now' : 'Offline'}</div></div>
                 </div>
                 <div className="relative">
@@ -390,7 +380,7 @@ export default function MessagePage() {
                   {isMenuOpen && (
                     <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border z-10">
                       <button onClick={handleMuteToggle} className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm hover:bg-slate-50">{selectedThread.isMuted ? <Bell size={14}/> : <BellOff size={14}/>}{selectedThread.isMuted ? 'Unmute' : 'Mute'}</button>
-                      <button onClick={() => setDeleteModalVisible(true)} className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm text-red-600 hover:bg-red-50"><Trash2 size={14}/>Delete</button>
+                      <button onClick={() => { setDeleteModalVisible(true); setMenuOpen(false); }} className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm text-red-600 hover:bg-red-50"><Archive size={14}/>Archive</button>
                     </div>
                   )}
                 </div>
@@ -398,17 +388,53 @@ export default function MessagePage() {
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
-              {loadingMessages ? <div className="flex justify-center items-center h-full"><Loader2 className="w-8 h-8 animate-spin text-red-500"/></div> : 
+              {loadingMessages ? <div className="flex justify-center items-center h-full"><Loader2 className="w-8 h-8 animate-spin text-red-500"/></div> :
                 messages.map((msg) => {
                   const isAdminMessage = msg.senderId === 'flourish-admin';
+                  const reactions = msg.reactions ? Object.entries(msg.reactions).filter(([, value]) => value) : [];
                   return (
-                    <div key={msg.id} className={`flex mb-4 group ${isAdminMessage ? 'justify-end' : 'justify-start'}`}>
-                      {!isAdminMessage && <div className="w-8 h-8 mr-3 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0"><span className="text-red-600 text-xs font-medium">{getInitials(msg.senderName)}</span></div>}
-                      <div className="max-w-md">
-                        <div className={`px-4 py-3 rounded-2xl text-sm ${isAdminMessage ? 'bg-red-500 text-white' : 'bg-white'}`}>
-                          {msg.imageUrl && <a href={msg.imageUrl} target="_blank" rel="noopener noreferrer"><img src={msg.imageUrl} alt="Attachment" className="rounded-lg mb-2 max-w-xs h-auto" /></a>}
-                          {msg.text && <p>{msg.text}</p>}
+                    <div key={msg.id} className={`flex items-start mb-4 ${isAdminMessage ? 'justify-end' : 'justify-start'}`}>
+                      {!isAdminMessage && (
+                        selectedThread.userAvatar ? (
+                          <img src={selectedThread.userAvatar} alt={selectedThread.userName} className="w-8 h-8 mr-3 rounded-full object-cover flex-shrink-0" />
+                        ) : (
+                          <div className="w-8 h-8 mr-3 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                            <span className="text-red-600 text-xs font-medium">{getInitials(selectedThread.userName)}</span>
+                          </div>
+                        )
+                      )}
+                      <div className="flex flex-col gap-1 items-start max-w-md group relative">
+                        <div className={`absolute -top-8 z-10 p-1 bg-white rounded-full shadow-md border flex gap-1 transition-opacity duration-200 ${reactionPopoverId === msg.id ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+                          {availableReactions.map(emoji => (
+                            <button key={emoji} onClick={() => handleAdminReaction(msg, emoji)} className="text-xl p-1 rounded-full hover:bg-slate-100 transition-colors">
+                              {emoji}
+                            </button>
+                          ))}
                         </div>
+                        <button onClick={() => setReactionPopoverId(reactionPopoverId === msg.id ? null : msg.id)} className={`absolute -top-2 z-20 p-1 rounded-full bg-white border shadow-sm opacity-0 group-hover:opacity-100 transition-opacity ${isAdminMessage ? '-left-3' : '-right-3'}`}>
+                          <Smile size={14} className="text-slate-500"/>
+                        </button>
+
+                        <div className={`px-4 py-3 rounded-2xl text-sm ${isAdminMessage ? 'bg-red-500 text-white' : 'bg-white border'}`}>
+                          {msg.isUnsent ? (
+                            <p className="italic text-slate-400 flex items-center gap-2">
+                              <AlertCircle size={14}/> Unsent Message
+                            </p>
+                          ) : (
+                            <>
+                              {msg.imageUrl && <a href={msg.imageUrl} target="_blank" rel="noopener noreferrer"><img src={msg.imageUrl} alt="Attachment" className="rounded-lg mb-2 max-w-xs h-auto cursor-pointer" /></a>}
+                              {msg.text && <p>{msg.text}</p>}
+                            </>
+                          )}
+                        </div>
+                         {reactions.length > 0 && (
+                          <div className={`flex gap-1 bg-white border rounded-full px-2 py-0.5 shadow-sm -mt-3 ${isAdminMessage ? 'self-end' : 'self-start'}`}>
+                            {reactions.map(([key, emoji]) => (
+                              <span key={key} className="text-sm">{emoji}</span>
+                            ))}
+                          </div>
+                        )}
+
                         {msg.timestamp && <p className={`text-xs text-slate-400 mt-1 ${isAdminMessage ? 'text-right' : 'text-left'}`}>{new Date(msg.timestamp.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>}
                       </div>
                       {isAdminMessage && <div className="w-8 h-8 ml-3 rounded-full bg-red-500 flex items-center justify-center flex-shrink-0"><span className="text-white text-xs font-semibold">F</span></div>}
@@ -451,4 +477,3 @@ export default function MessagePage() {
     </div>
   );
 }
-

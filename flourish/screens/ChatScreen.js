@@ -15,36 +15,37 @@ import {
   Alert,
   Dimensions,
   Keyboard,
-  Image, // Import Image
-  Modal, // Import Modal for menu and fullscreen view
+  Image,
+  Modal,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import ThemeContext from '../context/ThemeContext';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
-// To enable image picking, you need to install expo-image-picker
-// Run: npx expo install expo-image-picker
 import * as ImagePicker from 'expo-image-picker';
 
-
 import { db, auth } from '../Backend/firebaseConfig';
-import { 
-  collection, 
-  addDoc, 
-  query, 
-  onSnapshot, 
-  orderBy, 
-  serverTimestamp, 
-  doc, 
-  getDoc, 
-  setDoc, 
+import {
+  collection,
+  addDoc,
+  query,
+  onSnapshot,
+  orderBy,
+  serverTimestamp,
+  doc,
+  getDoc,
+  setDoc,
   deleteDoc,
   where,
   getDocs,
   writeBatch,
-  updateDoc // Import updateDoc
+  updateDoc,
+  arrayUnion,
+  deleteField
 } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
+
+const sellerAvatar = require('../assets/picss.jpg');
 
 const { width, height } = Dimensions.get('window');
 
@@ -55,20 +56,24 @@ const ChatScreen = () => {
   const [newMessage, setNewMessage] = useState('');
   const [user, setUser] = useState(null);
   const [userName, setUserName] = useState('');
+  const [userAvatarUrl, setUserAvatarUrl] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isTyping, setIsTyping] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const flatListRef = useRef();
 
   const [selectedImage, setSelectedImage] = useState(null);
-  const [uploading, setUploading] = useState(false); 
+  const [uploading, setUploading] = useState(false);
   const [imageModalVisible, setImageModalVisible] = useState(false);
   const [viewingImage, setViewingImage] = useState(null);
-
-  // --- START: New state for Header Menu ---
   const [menuVisible, setMenuVisible] = useState(false);
-  const [chatThread, setChatThread] = useState(null); // To hold thread data like isMuted
-  // --- END: New state for Header Menu ---
+  const [chatThread, setChatThread] = useState(null);
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [selectedMessage, setSelectedMessage] = useState(null);
+
+  const [reactionModalVisible, setReactionModalVisible] = useState(false);
+  const [selectedMessageForReaction, setSelectedMessageForReaction] = useState(null);
+  const availableReactions = ['😂', '👍', '❤️'];
 
   const colors = {
     background: isDarkMode ? '#0F0F23' : '#F8FAFC',
@@ -87,6 +92,12 @@ const ChatScreen = () => {
     online: '#10B981',
     border: isDarkMode ? '#374151' : '#E2E8F0',
     menuBackground: isDarkMode ? '#2d3748' : '#ffffff',
+    deleteModalOverlay: 'rgba(0, 0, 0, 0.6)',
+    deleteModalContent: isDarkMode ? '#2d3748' : '#FFFFFF',
+    deleteModalText: isDarkMode ? '#FFFFFF' : '#1E293B',
+    deleteModalSeparator: isDarkMode ? '#374151' : '#E2E8F0',
+    reactionBg: isDarkMode ? '#2c2c44' : '#FFFFFF',
+    reactionBorder: isDarkMode ? '#4A5568' : '#E2E8F0',
   };
 
   const styles = getStyles(colors);
@@ -106,7 +117,14 @@ const ChatScreen = () => {
         setUser(currentUser);
         const userDocRef = doc(db, 'signup_users', currentUser.uid);
         const userDoc = await getDoc(userDocRef);
-        setUserName(userDoc.exists() ? userDoc.data().fullName || 'User' : 'User');
+        if (userDoc.exists()) {
+            const userData = userDoc.data();
+            setUserName(userData.fullName || 'User');
+            setUserAvatarUrl(userData.profilePicUrl || null);
+        } else {
+            setUserName('User');
+            setUserAvatarUrl(null);
+        }
       } else {
         setUser(null);
         setLoading(false);
@@ -114,8 +132,7 @@ const ChatScreen = () => {
     });
     return () => unsubscribe();
   }, []);
-  
-  // --- START: New useEffect to listen to chat thread data (for mute status) ---
+
   useEffect(() => {
     if (user) {
         const appId = 'flourish-flowers-app';
@@ -128,7 +145,6 @@ const ChatScreen = () => {
         return () => unsubscribe();
     }
   }, [user]);
-  // --- END: New useEffect to listen to chat thread data ---
 
   useFocusEffect(
     useCallback(() => {
@@ -154,21 +170,21 @@ const ChatScreen = () => {
       }
     }, [user])
   );
-  
+
   const sendWelcomeMessage = async () => {
     if (!user) return;
     const appId = 'flourish-flowers-app';
     const messagesRef = collection(db, `artifacts/${appId}/public/data/chats/${user.uid}/messages`);
-    
+
     try {
       setIsTyping(true);
       setTimeout(async () => {
         await addDoc(messagesRef, {
-          text: 'Hello! Welcome to Flourish Flowers 🌸 How can I help you find the perfect flowers today?',
+          text: 'Hello! Welcome to Flourish Flowers 💐 How can I help you find the perfect flowers today?',
           timestamp: serverTimestamp(),
-          senderId: 'flourish-admin', 
+          senderId: 'flourish-admin',
           senderName: 'Flourish',
-          senderAvatar: 'F',
+          senderAvatar: null,
           isSeen: false,
         });
         setIsTyping(false);
@@ -186,10 +202,12 @@ const ChatScreen = () => {
       const q = query(messagesRef, orderBy('timestamp', 'asc'));
 
       const unsubscribe = onSnapshot(q, (querySnapshot) => {
-        if (querySnapshot.empty) {
+        if (querySnapshot.empty && !loading) {
           sendWelcomeMessage();
         }
-        const fetchedMessages = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), timestamp: doc.data().timestamp?.toDate() }));
+        const fetchedMessages = querySnapshot.docs
+            .map(doc => ({ id: doc.id, ...doc.data(), timestamp: doc.data().timestamp?.toDate() }))
+            .filter(msg => !msg.deletedFor?.includes(user?.uid));
         setMessages(fetchedMessages);
         setLoading(false);
       });
@@ -203,7 +221,7 @@ const ChatScreen = () => {
     const UPLOAD_PRESET = 'my_app_preset';
     const formData = new FormData();
     let fileType = uri.substring(uri.lastIndexOf(".") + 1);
-    
+
     formData.append('file', { uri, name: `photo.${fileType}`, type: `image/${fileType}` });
     formData.append('upload_preset', UPLOAD_PRESET);
 
@@ -232,30 +250,45 @@ const ChatScreen = () => {
             return;
         }
     }
-    
+
     setNewMessage('');
     setSelectedImage(null);
 
     const appId = 'flourish-flowers-app';
     const chatThreadRef = doc(db, `artifacts/${appId}/public/data/chats/${user.uid}`);
     const messagesRef = collection(chatThreadRef, 'messages');
-    
+
     try {
-      const messageData = { timestamp: serverTimestamp(), senderId: user.uid, senderName: userName, isSeen: false };
+      const messageData = {
+          timestamp: serverTimestamp(),
+          senderId: user.uid,
+          senderName: userName,
+          isSeen: false,
+          senderAvatar: userAvatarUrl,
+      };
       if (messageText) messageData.text = messageText;
       if (imageUrl) messageData.imageUrl = imageUrl;
       await addDoc(messagesRef, messageData);
-      
+
       let lastMessage = imageUrl ? (messageText ? `📷 ${messageText}` : '📷 Photo') : messageText;
-      
-      await setDoc(chatThreadRef, { lastMessage, timestamp: serverTimestamp(), userName, isRead: false, isSeenByUser: true, lastMessageSenderId: user.uid }, { merge: true });
+
+      await setDoc(chatThreadRef, {
+        lastMessage,
+        timestamp: serverTimestamp(),
+        userName,
+        userAvatar: userAvatarUrl,
+        isRead: false,
+        isSeenByUser: true,
+        lastMessageSenderId: user.uid,
+        isHiddenForAdmin: false
+      }, { merge: true });
     } catch (error) {
       console.error("Error sending message: ", error);
     } finally {
       setUploading(false);
     }
   };
-  
+
   const handleImageUpload = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
@@ -268,8 +301,7 @@ const ChatScreen = () => {
       setSelectedImage(result.assets[0].uri);
     }
   };
-  
-  // --- START: New Menu Action Handlers ---
+
   const handleMuteToggle = async () => {
     if (!user || !chatThread) return;
     setMenuVisible(false);
@@ -311,27 +343,131 @@ const ChatScreen = () => {
       ]
     );
   };
-  // --- END: New Menu Action Handlers ---
 
   const openImageModal = (imageUrl) => {
     setViewingImage(imageUrl);
     setImageModalVisible(true);
   };
 
+  const openDeleteModal = (message) => {
+    setSelectedMessage(message);
+    setDeleteModalVisible(true);
+  };
+
+  const handleDeleteForMe = async () => {
+    if (!selectedMessage || !user) return;
+    const appId = 'flourish-flowers-app';
+    const messageRef = doc(db, `artifacts/${appId}/public/data/chats/${user.uid}/messages`, selectedMessage.id);
+    try {
+        await updateDoc(messageRef, {
+            deletedFor: arrayUnion(user.uid)
+        });
+    } catch (error) {
+        console.error("Error deleting message for you:", error);
+        Alert.alert("Error", "Could not delete this message.");
+    }
+    setDeleteModalVisible(false);
+    setSelectedMessage(null);
+  };
+
+  const handleDeleteForEveryone = async () => {
+    if (!selectedMessage) return;
+    const appId = 'flourish-flowers-app';
+    const messageRef = doc(db, `artifacts/${appId}/public/data/chats/${user.uid}/messages`, selectedMessage.id);
+    try {
+        await updateDoc(messageRef, {
+            text: 'Unsent Message',
+            imageUrl: deleteField(),
+            isUnsent: true
+        });
+    } catch (error) {
+        console.error("Error unsending message:", error);
+        Alert.alert("Error", "Could not unsend this message.");
+    }
+    setDeleteModalVisible(false);
+    setSelectedMessage(null);
+  };
+
+  const openReactionModal = (message) => {
+    setSelectedMessageForReaction(message);
+    setReactionModalVisible(true);
+  };
+
+  const handleReactionSelect = async (emoji) => {
+    if (!selectedMessageForReaction || !user) return;
+    const message = selectedMessageForReaction;
+    const appId = 'flourish-flowers-app';
+    const messageRef = doc(db, `artifacts/${appId}/public/data/chats/${user.uid}/messages`, message.id);
+
+    const currentReaction = message.reactions?.[user.uid];
+
+    try {
+        if (currentReaction === emoji) {
+            await updateDoc(messageRef, { [`reactions.${user.uid}`]: deleteField() });
+        } else {
+            await updateDoc(messageRef, { [`reactions.${user.uid}`]: emoji });
+        }
+    } catch (error) {
+        console.error("Error updating reaction:", error);
+        Alert.alert("Error", "Could not apply reaction.");
+    }
+    setReactionModalVisible(false);
+  };
+
+  const openDeleteModalFromReaction = () => {
+    setReactionModalVisible(false);
+    setTimeout(() => {
+        openDeleteModal(selectedMessageForReaction);
+    }, 100);
+  };
+
   const renderMessage = ({ item }) => {
     const isUserMessage = item.senderId === user?.uid;
+    const reactions = item.reactions ? Object.entries(item.reactions).filter(([, value]) => value) : [];
+
     return (
       <View style={[ styles.messageRow, { justifyContent: isUserMessage ? 'flex-end' : 'flex-start' }]}>
-        {!isUserMessage && <View style={styles.avatarContainer}><View style={styles.avatarGradient}><Text style={styles.avatarText}>{item.senderAvatar || 'F'}</Text></View></View>}
-        <View style={[ styles.messageBubble, isUserMessage ? styles.userBubble : styles.adminBubble ]}>
-          {item.imageUrl && <TouchableOpacity onPress={() => openImageModal(item.imageUrl)}><Image source={{ uri: item.imageUrl }} style={styles.chatImage} resizeMode="cover" /></TouchableOpacity>}
-          {item.text && <Text style={isUserMessage ? styles.userBubbleText : styles.adminBubbleText}>{item.text}</Text>}
-          <View style={styles.timestampContainer}>
-            <Text style={[styles.timestamp, isUserMessage && styles.userTimestamp]}>{item.timestamp ? item.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Sending...'}</Text>
-            {isUserMessage && <Icon name={item.isSeen ? 'check-all' : 'check'} size={15} color={isDarkMode ? 'rgba(255,255,255,0.8)' : '#FFFFFF'} style={styles.checkIcon} />}
-          </View>
+        {!isUserMessage && <View style={styles.avatarContainer}><Image source={sellerAvatar} style={styles.adminAvatar} /></View>}
+
+        <View>
+          <TouchableOpacity onLongPress={() => openReactionModal(item)} activeOpacity={0.8}>
+            <View style={[ styles.messageBubble, isUserMessage ? styles.userBubble : styles.adminBubble ]}>
+              {item.isUnsent ? (
+                <Text style={[isUserMessage ? styles.userBubbleText : styles.adminBubbleText, styles.unsentText]}>
+                  <Icon name="cancel" size={14} style={{ marginRight: 4 }}/> Unsent Message
+                </Text>
+              ) : (
+                <>
+                  {item.imageUrl && <TouchableOpacity onPress={() => openImageModal(item.imageUrl)}><Image source={{ uri: item.imageUrl }} style={styles.chatImage} resizeMode="cover" /></TouchableOpacity>}
+                  {item.text && <Text style={isUserMessage ? styles.userBubbleText : styles.adminBubbleText}>{item.text}</Text>}
+                </>
+              )}
+              <View style={styles.timestampContainer}>
+                <Text style={[styles.timestamp, isUserMessage && styles.userTimestamp]}>{item.timestamp ? item.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Sending...'}</Text>
+                {isUserMessage && !item.isUnsent && <Icon name={item.isSeen ? 'check-all' : 'check'} size={15} color={isDarkMode ? 'rgba(255,255,255,0.8)' : '#FFFFFF'} style={styles.checkIcon} />}
+              </View>
+            </View>
+          </TouchableOpacity>
+          {reactions.length > 0 && (
+            <View style={[styles.reactionsContainer, isUserMessage ? styles.userReactions : styles.adminReactions]}>
+              {reactions.map(([key, emoji]) => (
+                <Text key={key} style={styles.reactionEmoji}>{emoji}</Text>
+              ))}
+            </View>
+          )}
         </View>
-        {isUserMessage && <View style={styles.userAvatarContainer}><View style={styles.userAvatarGradient}><Text style={styles.avatarText}>{userName.substring(0, 1).toUpperCase()}</Text></View></View>}
+
+        {isUserMessage && (
+            <View style={styles.userAvatarContainer}>
+                {userAvatarUrl ? (
+                    <Image source={{ uri: userAvatarUrl }} style={styles.adminAvatar} />
+                ) : (
+                    <View style={styles.userAvatarGradient}>
+                        <Text style={styles.avatarText}>{userName.substring(0, 1).toUpperCase()}</Text>
+                    </View>
+                )}
+            </View>
+        )}
       </View>
     );
   };
@@ -341,8 +477,7 @@ const ChatScreen = () => {
       <Modal visible={imageModalVisible} transparent={true} onRequestClose={() => setImageModalVisible(false)} animationType="fade">
         <View style={styles.modalContainer}><TouchableOpacity style={styles.closeButton} onPress={() => setImageModalVisible(false)}><Icon name="close" size={30} color="#fff" /></TouchableOpacity><Image source={{ uri: viewingImage }} style={styles.fullscreenImage} resizeMode="contain" /></View>
       </Modal>
-      
-      {/* --- START: Menu Modal --- */}
+
       <Modal visible={menuVisible} transparent={true} onRequestClose={() => setMenuVisible(false)} animationType="fade">
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPressOut={() => setMenuVisible(false)}>
             <View style={styles.menuContainer}>
@@ -357,14 +492,63 @@ const ChatScreen = () => {
             </View>
         </TouchableOpacity>
       </Modal>
-      {/* --- END: Menu Modal --- */}
+
+      <Modal visible={deleteModalVisible} transparent={true} onRequestClose={() => setDeleteModalVisible(false)} animationType="slide">
+        <TouchableOpacity style={styles.deleteModalOverlay} activeOpacity={1} onPressOut={() => setDeleteModalVisible(false)}>
+          <View style={styles.deleteModalContainer}>
+            <View style={styles.deleteModalContent}>
+                <TouchableOpacity style={styles.deleteModalOption} onPress={handleDeleteForMe}>
+                    <Text style={styles.deleteModalText}>Delete for You</Text>
+                </TouchableOpacity>
+                <View style={styles.deleteModalSeparator} />
+                <TouchableOpacity style={styles.deleteModalOption} onPress={handleDeleteForEveryone}>
+                    <Text style={[styles.deleteModalText, { color: '#E53E3E' }]}>Delete for Everyone</Text>
+                </TouchableOpacity>
+            </View>
+            <TouchableOpacity style={[styles.deleteModalContent, { marginTop: 8 }]} onPress={() => setDeleteModalVisible(false)}>
+                <Text style={[styles.deleteModalText, { fontWeight: 'bold' }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      <Modal
+        visible={reactionModalVisible}
+        transparent={true}
+        onRequestClose={() => setReactionModalVisible(false)}
+        animationType="fade"
+      >
+        <TouchableOpacity style={styles.reactionModalOverlay} activeOpacity={1} onPressOut={() => setReactionModalVisible(false)}>
+          <View style={styles.reactionModalContainer}>
+              {availableReactions.map(emoji => (
+                  <TouchableOpacity key={emoji} onPress={() => handleReactionSelect(emoji)}>
+                      <Text style={styles.reactionEmojiOption}>{emoji}</Text>
+                  </TouchableOpacity>
+              ))}
+              {selectedMessageForReaction?.senderId === user?.uid && (
+                  <>
+                    <View style={styles.reactionSeparator} />
+                    <TouchableOpacity onPress={openDeleteModalFromReaction}>
+                        <Icon name="dots-horizontal" size={28} color={colors.subText} style={styles.reactionMoreIcon}/>
+                    </TouchableOpacity>
+                  </>
+              )}
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       <View style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}><Icon name="arrow-left" size={24} color={colors.text} /></TouchableOpacity>
           <View style={styles.headerInfo}>
-            <View style={styles.headerAvatarContainer}><View style={styles.headerAvatarGradient}><Icon name="flower" size={20} color="#FFFFFF" /></View><View style={styles.onlineIndicator} /></View>
-            <View style={styles.headerTextContainer}><Text style={styles.headerTitle}>Flourish Flowers</Text><Text style={styles.headerSubtitle}>{isTyping ? 'typing...' : 'Online'}</Text></View>
+            <View style={styles.headerAvatarContainer}>
+              <Image source={sellerAvatar} style={styles.headerAvatar} />
+              <View style={styles.onlineIndicator} />
+            </View>
+            <View style={styles.headerTextContainer}>
+                <Text style={styles.headerTitle}>Christy Lou Bacus</Text>
+                <Text style={styles.headerSubtitle}>{isTyping ? 'typing...' : 'Online'}</Text>
+            </View>
           </View>
           <TouchableOpacity style={styles.moreButton} onPress={() => setMenuVisible(true)}><Icon name="dots-vertical" size={24} color={colors.text} /></TouchableOpacity>
         </View>
@@ -396,7 +580,7 @@ const getStyles = (colors) => StyleSheet.create({
   backButton: { padding: 8, borderRadius: 20, backgroundColor: colors.background },
   headerInfo: { flex: 1, flexDirection: 'row', alignItems: 'center', marginLeft: 15 },
   headerAvatarContainer: { position: 'relative', marginRight: 12 },
-  headerAvatarGradient: { width: 42, height: 42, borderRadius: 21, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.primary },
+  headerAvatar: { width: 42, height: 42, borderRadius: 21 },
   onlineIndicator: { position: 'absolute', bottom: 2, right: 2, width: 14, height: 14, borderRadius: 7, backgroundColor: colors.online, borderWidth: 3, borderColor: colors.card },
   headerTextContainer: { flex: 1 },
   headerTitle: { fontSize: 18, fontWeight: 'bold', color: colors.text, marginBottom: 2 },
@@ -408,7 +592,7 @@ const getStyles = (colors) => StyleSheet.create({
   messageRow: { flexDirection: 'row', marginVertical: 4, alignItems: 'flex-end' },
   avatarContainer: { marginRight: 10, marginBottom: 5 },
   userAvatarContainer: { marginLeft: 10, marginBottom: 5 },
-  avatarGradient: { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.primary },
+  adminAvatar: { width: 32, height: 32, borderRadius: 16 },
   userAvatarGradient: { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.secondary },
   avatarText: { color: '#FFFFFF', fontSize: 14, fontWeight: 'bold' },
   messageBubble: { padding: 8, borderRadius: 20, maxWidth: width * 0.7 },
@@ -436,43 +620,75 @@ const getStyles = (colors) => StyleSheet.create({
   modalContainer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center' },
   fullscreenImage: { width: width, height: height * 0.8 },
   closeButton: { position: 'absolute', top: 50, right: 20, zIndex: 1 },
-  // --- START: New Menu Styles ---
-  modalOverlay: {
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.5)', justifyContent: 'flex-start', alignItems: 'flex-end',},
+  menuContainer: { position: 'absolute', top: Platform.OS === 'android' ? StatusBar.currentHeight + 60 : 100, right: 20, backgroundColor: colors.menuBackground, borderRadius: 12, padding: 8, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 3.84, elevation: 5, width: 220,},
+  menuItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 10,},
+  menuText: { color: colors.text, fontSize: 16, marginLeft: 15,},
+  menuIcon: { width: 24,},
+  unsentText: { fontStyle: 'italic', opacity: 0.8 },
+  deleteModalOverlay: { flex: 1, backgroundColor: colors.deleteModalOverlay, justifyContent: 'flex-end' },
+  deleteModalContainer: { marginHorizontal: 10, marginBottom: Platform.OS === 'ios' ? 30 : 20 },
+  deleteModalContent: { backgroundColor: colors.deleteModalContent, borderRadius: 14 },
+  deleteModalOption: { paddingVertical: 18, alignItems: 'center' },
+  deleteModalText: { color: colors.deleteModalText, fontSize: 18 },
+  deleteModalSeparator: { height: 1, backgroundColor: colors.deleteModalSeparator },
+  reactionModalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-start',
-    alignItems: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
   },
-  menuContainer: {
-    position: 'absolute',
-    top: Platform.OS === 'android' ? StatusBar.currentHeight + 60 : 100,
-    right: 20,
-    backgroundColor: colors.menuBackground,
-    borderRadius: 12,
-    padding: 8,
+  reactionModalContainer: {
+    flexDirection: 'row',
+    backgroundColor: colors.reactionBg,
+    borderRadius: 25,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    alignItems: 'center',
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
     elevation: 5,
-    width: 220,
   },
-  menuItem: {
+  reactionEmojiOption: {
+    fontSize: 28,
+    marginHorizontal: 8,
+  },
+  reactionSeparator: {
+    width: 1,
+    height: 24,
+    backgroundColor: colors.reactionBorder,
+    marginHorizontal: 8,
+  },
+  reactionMoreIcon: {
+    padding: 4,
+  },
+  reactionsContainer: {
+    position: 'absolute',
+    bottom: -10,
     flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 10,
+    backgroundColor: colors.card,
+    borderRadius: 10,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.18,
+    shadowRadius: 1.00,
+    elevation: 1,
   },
-  menuText: {
-    color: colors.text,
-    fontSize: 16,
-    marginLeft: 15,
+  userReactions: {
+    right: 0,
   },
-  menuIcon: {
-    width: 24,
-  }
-  // --- END: New Menu Styles ---
+  adminReactions: {
+    left: 0,
+  },
+  reactionEmoji: {
+    fontSize: 14,
+    marginLeft: 2,
+  },
 });
 
 export default ChatScreen;
-
