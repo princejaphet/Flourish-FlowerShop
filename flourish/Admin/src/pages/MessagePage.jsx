@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   MailOpen, Send, MoreHorizontal, Bell, BellOff, Trash2, X, Search,
-  Smile, Paperclip, MessageCircle, Zap, TrendingUp, Loader2, AlertCircle, Archive
+  Smile, Paperclip, MessageCircle, Zap, TrendingUp, Loader2, AlertCircle, Archive, Pencil
 } from 'lucide-react';
 import { db } from '../firebase';
 import {
@@ -51,6 +51,8 @@ export default function MessagePage() {
   const [reactionPopoverId, setReactionPopoverId] = useState(null);
   const availableReactions = ['😂', '👍', '❤️'];
 
+  const [editingMessage, setEditingMessage] = useState(null);
+  const [editedContent, setEditedContent] = useState('');
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -198,6 +200,36 @@ export default function MessagePage() {
     setImageFile(null);
     setIsUploading(false);
   };
+  
+    const handleUpdateMessage = async (messageId) => {
+        if (!selectedThread || !editedContent.trim()) return;
+        const appId = 'flourish-flowers-app';
+        const messageRef = doc(db, `artifacts/${appId}/public/data/chats/${selectedThread.id}/messages`, messageId);
+
+        try {
+            await updateDoc(messageRef, {
+                text: editedContent.trim(),
+                edited: true
+            });
+
+            const lastMsg = messages[messages.length - 1];
+            if (lastMsg.id === messageId) {
+                const chatThreadRef = doc(db, `artifacts/${appId}/public/data/chats/${selectedThread.id}`);
+                let updatedLastMessage = editedContent.trim();
+                if (lastMsg.imageUrl) {
+                    updatedLastMessage = `📷 ${updatedLastMessage}`;
+                }
+                await updateDoc(chatThreadRef, { lastMessage: updatedLastMessage });
+            }
+
+        } catch (error) {
+            console.error("Error updating message:", error);
+            alert("Could not update the message.");
+        } finally {
+            setEditingMessage(null);
+            setEditedContent('');
+        }
+    };
 
   const handleFileSelect = (event) => {
     if (event.target.files && event.target.files[0]) {
@@ -301,7 +333,6 @@ export default function MessagePage() {
         <div className="flex justify-between items-center mb-6">
           <div>
             <h1 className="text-3xl font-bold text-slate-800">Customer Messages</h1>
-            <p className="text-slate-500 mt-1">Manage and respond to customer inquiries in real-time.</p>
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -411,20 +442,45 @@ export default function MessagePage() {
                             </button>
                           ))}
                         </div>
-                        <button onClick={() => setReactionPopoverId(reactionPopoverId === msg.id ? null : msg.id)} className={`absolute -top-2 z-20 p-1 rounded-full bg-white border shadow-sm opacity-0 group-hover:opacity-100 transition-opacity ${isAdminMessage ? '-left-3' : '-right-3'}`}>
+
+                        {isAdminMessage && !msg.isUnsent && msg.text && (
+                            <button onClick={() => { setEditingMessage(msg); setEditedContent(msg.text); }} className={`absolute -top-2 -left-3 z-20 p-1 rounded-full bg-white border shadow-sm opacity-0 group-hover:opacity-100 transition-opacity`}>
+                                <Pencil size={14} className="text-slate-500" />
+                            </button>
+                        )}
+                        <button onClick={() => setReactionPopoverId(reactionPopoverId === msg.id ? null : msg.id)} className={`absolute -top-2 z-20 p-1 rounded-full bg-white border shadow-sm opacity-0 group-hover:opacity-100 transition-opacity ${isAdminMessage ? '-left-12' : '-right-3'}`}>
                           <Smile size={14} className="text-slate-500"/>
                         </button>
 
                         <div className={`px-4 py-3 rounded-2xl text-sm ${isAdminMessage ? 'bg-red-500 text-white' : 'bg-white border'}`}>
-                          {msg.isUnsent ? (
-                            <p className="italic text-slate-400 flex items-center gap-2">
-                              <AlertCircle size={14}/> Unsent Message
-                            </p>
+                          {editingMessage?.id === msg.id ? (
+                              <div className="flex flex-col gap-2">
+                                  <input
+                                      type="text"
+                                      value={editedContent}
+                                      onChange={(e) => setEditedContent(e.target.value)}
+                                      className="text-slate-800 rounded p-1 w-full"
+                                      onKeyDown={(e) => { if (e.key === 'Enter') handleUpdateMessage(msg.id); if (e.key === 'Escape') setEditingMessage(null); }}
+                                      autoFocus
+                                  />
+                                  <div className="flex gap-2 self-end mt-1">
+                                      <button onClick={() => setEditingMessage(null)} className="text-xs text-white/80 hover:underline">Cancel</button>
+                                      <button onClick={() => handleUpdateMessage(msg.id)} className="text-xs font-semibold text-white hover:underline">Save</button>
+                                  </div>
+                              </div>
                           ) : (
-                            <>
-                              {msg.imageUrl && <a href={msg.imageUrl} target="_blank" rel="noopener noreferrer"><img src={msg.imageUrl} alt="Attachment" className="rounded-lg mb-2 max-w-xs h-auto cursor-pointer" /></a>}
-                              {msg.text && <p>{msg.text}</p>}
-                            </>
+                          <>
+                            {msg.isUnsent ? (
+                              <p className="italic text-slate-400 flex items-center gap-2">
+                                <AlertCircle size={14}/> Unsent Message
+                              </p>
+                            ) : (
+                              <>
+                                {msg.imageUrl && <a href={msg.imageUrl} target="_blank" rel="noopener noreferrer"><img src={msg.imageUrl} alt="Attachment" className="rounded-lg mb-2 max-w-xs h-auto cursor-pointer" /></a>}
+                                {msg.text && <p>{msg.text}</p>}
+                              </>
+                            )}
+                          </>
                           )}
                         </div>
                          {reactions.length > 0 && (
@@ -435,7 +491,10 @@ export default function MessagePage() {
                           </div>
                         )}
 
-                        {msg.timestamp && <p className={`text-xs text-slate-400 mt-1 ${isAdminMessage ? 'text-right' : 'text-left'}`}>{new Date(msg.timestamp.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>}
+                        {msg.timestamp && <p className={`text-xs text-slate-400 mt-1 ${isAdminMessage ? 'text-right w-full' : 'text-left'}`}>
+                            {msg.edited && <span className="italic">edited </span>}
+                            {new Date(msg.timestamp.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </p>}
                       </div>
                       {isAdminMessage && <div className="w-8 h-8 ml-3 rounded-full bg-red-500 flex items-center justify-center flex-shrink-0"><span className="text-white text-xs font-semibold">F</span></div>}
                     </div>

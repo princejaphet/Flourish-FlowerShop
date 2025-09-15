@@ -327,7 +327,7 @@ export default function DashboardPage() {
         <div className="flex justify-between items-center mb-6">
           <div>
             <h1 className="text-3xl font-bold text-slate-800">Dashboard Overview</h1>
-            <p className="text-slate-500 mt-1">Welcome back! Here's what's happening with your flower shop.</p>
+            <p className="text-slate-500 mt-1"></p>
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

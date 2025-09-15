@@ -502,7 +502,7 @@ export default function ProductAndInventoryPage() {
         <div className="flex justify-between items-center mb-6">
           <div>
             <h1 className="text-3xl font-bold text-slate-800">Product & Inventory</h1>
-            <p className="text-slate-500 mt-1">Manage your product catalog and track inventory levels.</p>
+            <p className="text-slate-500 mt-1"></p>
           </div>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 text-sm text-slate-500">

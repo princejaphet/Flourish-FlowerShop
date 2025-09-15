@@ -15,7 +15,7 @@ import {
   RefreshControl,
   StatusBar,
   Animated,
-  ScrollView, // --- CORRECTED: Added ScrollView to the import list ---
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -62,6 +62,16 @@ const allSpecialOffers = [
       background: require('../assets/back.png'),
       image: require('../assets/discount2.png')
     },
+    {
+      id: 'offer_sunflower',
+      type: 'browse',
+      title: 'Explore our Fresh & New flowers',
+      subtitle: 'Brighten up your day with our latest collection.',
+      badge: null,
+      buttonText: 'Browse Flowers',
+      background: require('../assets/back.png'),
+      image: require('../assets/sunflower.png') 
+    },
 ];
 
 const HomepageSkeleton = ({ isDarkMode }) => {
@@ -98,22 +108,18 @@ const HomepageSkeleton = ({ isDarkMode }) => {
     return (
         <SafeAreaView style={styles.safeArea}>
             <ScrollView style={{ flex: 1 }}>
-                {/* Header Skeleton */}
                 <View style={styles.header}>
                     <SkeletonBlock style={{ width: 40, height: 40, borderRadius: 20 }} />
                     <SkeletonBlock style={{ width: 100, height: 30, borderRadius: 8 }} />
                     <SkeletonBlock style={{ width: 30, height: 30, borderRadius: 8 }} />
                 </View>
-                {/* Welcome Text Skeleton */}
                 <View style={styles.welcomeContainer}>
                     <SkeletonBlock style={{ width: '70%', height: 30, borderRadius: 8, marginBottom: 10 }} />
                     <SkeletonBlock style={{ width: '90%', height: 20, borderRadius: 8 }} />
                 </View>
-                {/* Offer Card Skeleton */}
                 <View style={styles.offerContainer}>
                     <SkeletonBlock style={{ width: CARD_WIDTH, height: 180, borderRadius: 15 }} />
                 </View>
-                {/* Categories Skeleton */}
                 <View style={styles.categoryContainer}>
                     <View style={{ flexDirection: 'row', paddingHorizontal: 20 }}>
                         <SkeletonBlock style={{ height: 40, width: 80, borderRadius: 20, marginRight: 10 }} />
@@ -121,7 +127,6 @@ const HomepageSkeleton = ({ isDarkMode }) => {
                         <SkeletonBlock style={{ height: 40, width: 90, borderRadius: 20 }} />
                     </View>
                 </View>
-                {/* Product Grid Skeleton */}
                 <View style={{ paddingHorizontal: 15, flexDirection: 'row', justifyContent: 'space-between' }}>
                     <ProductSkeleton isDarkMode={isDarkMode} />
                     <ProductSkeleton isDarkMode={isDarkMode} />
@@ -464,13 +469,22 @@ const Homepage = ({ navigation }) => {
           </Text>
         );
       }
+      if (currentOffer.id === 'offer_sunflower') {
+        const parts = currentOffer.title.split(/(Fresh & New)/);
+        return (
+          <Text style={styles.offerTitle}>
+            {parts[0]}<Text style={styles.offerHighlightPink}>{parts[1]}</Text>{parts[2]}
+          </Text>
+        );
+      }
       return <Text style={styles.offerTitle}>{currentOffer.title}</Text>;
     };
 
     const OfferCardComponent = () => {
-      const isDesignBouquet = currentOffer.id === 'offer_design_own';
-      const cardStyle = isDesignBouquet 
-        ? [styles.offerCard, {flexDirection: 'row-reverse'}] 
+      const shouldReverseDirection = currentOffer.id === 'offer_design_own' || currentOffer.id === 'offer_sunflower';
+      
+      const cardStyle = shouldReverseDirection
+        ? [styles.offerCard, { flexDirection: 'row-reverse' }]
         : styles.offerCard;
 
       return (
@@ -495,7 +509,9 @@ const Homepage = ({ navigation }) => {
     return (
       <View>
         <View style={styles.header}>
-          <Image source={profilePicUrl ? { uri: profilePicUrl } : require('../assets/pic.png')} style={styles.profile} />
+          <TouchableOpacity onPress={() => navigation.navigate('EditProfile')}>
+            <Image source={profilePicUrl ? { uri: profilePicUrl } : require('../assets/pic.png')} style={styles.profile} />
+          </TouchableOpacity>
           <Image source={require('../assets/flourish.png')} style={styles.logo} />
           <TouchableOpacity onPress={() => navigation.navigate('Notifications')}>
             <Icon

@@ -278,7 +278,7 @@ export default function OrderAndStatusPage() {
         <div className="flex justify-between items-center mb-6">
           <div>
             <h1 className="text-3xl font-bold text-slate-800">Order Management</h1>
-            <p className="text-slate-500 mt-1">Track and manage all customer orders in one place.</p>
+            <p className="text-slate-500 mt-1"></p>
           </div>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 text-sm text-slate-500">

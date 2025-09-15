@@ -75,6 +75,11 @@ const ChatScreen = () => {
   const [selectedMessageForReaction, setSelectedMessageForReaction] = useState(null);
   const availableReactions = ['😂', '👍', '❤️'];
 
+  // --- BAG-O NGA STATE PARA SA PAG-EDIT ---
+  const [editingMessage, setEditingMessage] = useState(null);
+  const [editedContent, setEditedContent] = useState('');
+  // ------------------------------------
+
   const colors = {
     background: isDarkMode ? '#0F0F23' : '#F8FAFC',
     card: isDarkMode ? '#1E1E3F' : '#FFFFFF',
@@ -288,6 +293,42 @@ const ChatScreen = () => {
       setUploading(false);
     }
   };
+  
+    // --- BAG-O NGA FUNCTION PARA I-UPDATE ANG MENSAHE ---
+    const handleUpdateMessage = async () => {
+        if (!editingMessage || !user || !editedContent.trim()) {
+            setEditingMessage(null);
+            return;
+        };
+        
+        const appId = 'flourish-flowers-app';
+        const messageRef = doc(db, `artifacts/${appId}/public/data/chats/${user.uid}/messages`, editingMessage.id);
+
+        try {
+            await updateDoc(messageRef, {
+                text: editedContent.trim(),
+                edited: true
+            });
+
+            const lastMsg = messages[messages.length - 1];
+            if (lastMsg.id === editingMessage.id) {
+                const chatThreadRef = doc(db, `artifacts/${appId}/public/data/chats/${user.uid}`);
+                let lastMessage = editedContent.trim();
+                if (lastMsg.imageUrl) {
+                    lastMessage = `📷 ${lastMessage}`;
+                }
+                await updateDoc(chatThreadRef, { lastMessage });
+            }
+
+        } catch (error) {
+            console.error("Error updating message:", error);
+            Alert.alert("Error", "Could not update the message.");
+        } finally {
+            setEditingMessage(null);
+            setEditedContent('');
+        }
+    };
+    // ----------------------------------------------------
 
   const handleImageUpload = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -413,6 +454,17 @@ const ChatScreen = () => {
     }
     setReactionModalVisible(false);
   };
+  
+    // --- BAG-ONG HELPER FUNCTIONS PARA SA EDITING UG DELETING ---
+    const startEditingFromModal = () => {
+        setReactionModalVisible(false);
+        setTimeout(() => {
+            if (selectedMessageForReaction) {
+                setEditingMessage(selectedMessageForReaction);
+                setEditedContent(selectedMessageForReaction.text);
+            }
+        }, 150);
+    };
 
   const openDeleteModalFromReaction = () => {
     setReactionModalVisible(false);
@@ -420,6 +472,7 @@ const ChatScreen = () => {
         openDeleteModal(selectedMessageForReaction);
     }, 100);
   };
+    // --------------------------------------------------------
 
   const renderMessage = ({ item }) => {
     const isUserMessage = item.senderId === user?.uid;
@@ -432,20 +485,50 @@ const ChatScreen = () => {
         <View>
           <TouchableOpacity onLongPress={() => openReactionModal(item)} activeOpacity={0.8}>
             <View style={[ styles.messageBubble, isUserMessage ? styles.userBubble : styles.adminBubble ]}>
-              {item.isUnsent ? (
-                <Text style={[isUserMessage ? styles.userBubbleText : styles.adminBubbleText, styles.unsentText]}>
-                  <Icon name="cancel" size={14} style={{ marginRight: 4 }}/> Unsent Message
-                </Text>
+              {/* --- BAG-ONG CONDITIONAL EDITING UI --- */}
+              {editingMessage?.id === item.id ? (
+                  <View>
+                      <TextInput
+                          value={editedContent}
+                          onChangeText={setEditedContent}
+                          style={[isUserMessage ? styles.userBubbleText : styles.adminBubbleText, styles.editingInput]}
+                          autoFocus
+                          multiline
+                      />
+                      <View style={styles.editActionsContainer}>
+                          <TouchableOpacity onPress={() => setEditingMessage(null)}>
+                              <Text style={[styles.editActionText, isUserMessage && styles.userEditActionText]}>Cancel</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity onPress={handleUpdateMessage}>
+                              <Text style={[styles.editActionText, isUserMessage && styles.userEditActionText, { fontWeight: 'bold' }]}>Save</Text>
+                          </TouchableOpacity>
+                      </View>
+                  </View>
               ) : (
                 <>
-                  {item.imageUrl && <TouchableOpacity onPress={() => openImageModal(item.imageUrl)}><Image source={{ uri: item.imageUrl }} style={styles.chatImage} resizeMode="cover" /></TouchableOpacity>}
-                  {item.text && <Text style={isUserMessage ? styles.userBubbleText : styles.adminBubbleText}>{item.text}</Text>}
+                  {item.isUnsent ? (
+                    <Text style={[isUserMessage ? styles.userBubbleText : styles.adminBubbleText, styles.unsentText]}>
+                      <Icon name="cancel" size={14} style={{ marginRight: 4 }}/> Unsent Message
+                    </Text>
+                  ) : (
+                    <>
+                      {item.imageUrl && <TouchableOpacity onPress={() => openImageModal(item.imageUrl)}><Image source={{ uri: item.imageUrl }} style={styles.chatImage} resizeMode="cover" /></TouchableOpacity>}
+                      {item.text && <Text style={isUserMessage ? styles.userBubbleText : styles.adminBubbleText}>{item.text}</Text>}
+                    </>
+                  )}
                 </>
               )}
-              <View style={styles.timestampContainer}>
-                <Text style={[styles.timestamp, isUserMessage && styles.userTimestamp]}>{item.timestamp ? item.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Sending...'}</Text>
-                {isUserMessage && !item.isUnsent && <Icon name={item.isSeen ? 'check-all' : 'check'} size={15} color={isDarkMode ? 'rgba(255,255,255,0.8)' : '#FFFFFF'} style={styles.checkIcon} />}
-              </View>
+              {/* -------------------------------------- */}
+              
+              {/* --- Gi-update aron dili ipakita ang timestamp kung naga-edit --- */}
+              {editingMessage?.id !== item.id && (
+                <View style={styles.timestampContainer}>
+                  {/* --- BAG-ONG "(edited)" INDICATOR --- */}
+                  {item.edited && <Text style={[styles.editedText, isUserMessage && styles.userTimestamp]}>(edited) </Text>}
+                  <Text style={[styles.timestamp, isUserMessage && styles.userTimestamp]}>{item.timestamp ? item.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Sending...'}</Text>
+                  {isUserMessage && !item.isUnsent && <Icon name={item.isSeen ? 'check-all' : 'check'} size={15} color={isDarkMode ? 'rgba(255,255,255,0.8)' : '#FFFFFF'} style={styles.checkIcon} />}
+                </View>
+              )}
             </View>
           </TouchableOpacity>
           {reactions.length > 0 && (
@@ -525,14 +608,21 @@ const ChatScreen = () => {
                       <Text style={styles.reactionEmojiOption}>{emoji}</Text>
                   </TouchableOpacity>
               ))}
+              {/* --- GI-UPDATE NGA REACTION MODAL OPTIONS --- */}
               {selectedMessageForReaction?.senderId === user?.uid && (
                   <>
                     <View style={styles.reactionSeparator} />
+                    {selectedMessageForReaction?.text && !selectedMessageForReaction?.isUnsent && (
+                        <TouchableOpacity onPress={startEditingFromModal}>
+                            <Icon name="pencil" size={24} color={colors.subText} style={styles.reactionMoreIcon} />
+                        </TouchableOpacity>
+                    )}
                     <TouchableOpacity onPress={openDeleteModalFromReaction}>
                         <Icon name="dots-horizontal" size={28} color={colors.subText} style={styles.reactionMoreIcon}/>
                     </TouchableOpacity>
                   </>
               )}
+              {/* ------------------------------------------- */}
           </View>
         </TouchableOpacity>
       </Modal>
@@ -664,6 +754,7 @@ const getStyles = (colors) => StyleSheet.create({
   },
   reactionMoreIcon: {
     padding: 4,
+    marginHorizontal: 4,
   },
   reactionsContainer: {
     position: 'absolute',
@@ -689,6 +780,32 @@ const getStyles = (colors) => StyleSheet.create({
     fontSize: 14,
     marginLeft: 2,
   },
+  // --- BAG-ONG STYLES PARA SA PAG-EDIT ---
+  editingInput: {
+    padding: 0,
+    margin: 0,
+  },
+  editActionsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 8,
+    gap: 16,
+  },
+  editActionText: {
+    color: colors.adminBubbleText,
+    fontSize: 12,
+    opacity: 0.8,
+  },
+  userEditActionText: {
+    color: 'rgba(255, 255, 255, 0.8)',
+  },
+  editedText: {
+    fontSize: 11,
+    color: colors.subText,
+    opacity: 0.7,
+    fontStyle: 'italic',
+  },
+  // ------------------------------------
 });
 
 export default ChatScreen;

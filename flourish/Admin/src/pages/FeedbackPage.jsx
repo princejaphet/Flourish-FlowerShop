@@ -433,7 +433,7 @@ export default function FeedbackPage() {
       <header className="flex justify-between items-center mb-8">
         <div>
           <h1 className="text-3xl font-bold text-slate-800">Customer Feedback</h1>
-          <p className="text-slate-500 mt-1">Manage and respond to all feedback from your customers.</p>
+          <p className="text-slate-500 mt-1"></p>
         </div>
         <MonthYearPicker selectedDate={selectedDate} setSelectedDate={setSelectedDate} />
       </header>
