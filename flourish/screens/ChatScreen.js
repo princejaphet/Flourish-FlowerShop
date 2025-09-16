@@ -81,7 +81,7 @@ const ChatScreen = () => {
   // ------------------------------------
 
   const colors = {
-    background: isDarkMode ? '#0F0F23' : '#F8FAFC',
+    background: isDarkMode ? '#1a1a2e' : '#F7E9E9', // <-- GI-UPDATE NGA BACKGROUND COLOR
     card: isDarkMode ? '#1E1E3F' : '#FFFFFF',
     text: isDarkMode ? '#FFFFFF' : '#1E293B',
     subText: isDarkMode ? '#94A3B8' : '#64748B',
@@ -293,14 +293,13 @@ const ChatScreen = () => {
       setUploading(false);
     }
   };
-  
-    // --- BAG-O NGA FUNCTION PARA I-UPDATE ANG MENSAHE ---
+
     const handleUpdateMessage = async () => {
         if (!editingMessage || !user || !editedContent.trim()) {
             setEditingMessage(null);
             return;
         };
-        
+
         const appId = 'flourish-flowers-app';
         const messageRef = doc(db, `artifacts/${appId}/public/data/chats/${user.uid}/messages`, editingMessage.id);
 
@@ -328,7 +327,6 @@ const ChatScreen = () => {
             setEditedContent('');
         }
     };
-    // ----------------------------------------------------
 
   const handleImageUpload = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -454,8 +452,7 @@ const ChatScreen = () => {
     }
     setReactionModalVisible(false);
   };
-  
-    // --- BAG-ONG HELPER FUNCTIONS PARA SA EDITING UG DELETING ---
+
     const startEditingFromModal = () => {
         setReactionModalVisible(false);
         setTimeout(() => {
@@ -472,7 +469,6 @@ const ChatScreen = () => {
         openDeleteModal(selectedMessageForReaction);
     }, 100);
   };
-    // --------------------------------------------------------
 
   const renderMessage = ({ item }) => {
     const isUserMessage = item.senderId === user?.uid;
@@ -485,7 +481,6 @@ const ChatScreen = () => {
         <View>
           <TouchableOpacity onLongPress={() => openReactionModal(item)} activeOpacity={0.8}>
             <View style={[ styles.messageBubble, isUserMessage ? styles.userBubble : styles.adminBubble ]}>
-              {/* --- BAG-ONG CONDITIONAL EDITING UI --- */}
               {editingMessage?.id === item.id ? (
                   <View>
                       <TextInput
@@ -518,12 +513,9 @@ const ChatScreen = () => {
                   )}
                 </>
               )}
-              {/* -------------------------------------- */}
               
-              {/* --- Gi-update aron dili ipakita ang timestamp kung naga-edit --- */}
               {editingMessage?.id !== item.id && (
                 <View style={styles.timestampContainer}>
-                  {/* --- BAG-ONG "(edited)" INDICATOR --- */}
                   {item.edited && <Text style={[styles.editedText, isUserMessage && styles.userTimestamp]}>(edited) </Text>}
                   <Text style={[styles.timestamp, isUserMessage && styles.userTimestamp]}>{item.timestamp ? item.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Sending...'}</Text>
                   {isUserMessage && !item.isUnsent && <Icon name={item.isSeen ? 'check-all' : 'check'} size={15} color={isDarkMode ? 'rgba(255,255,255,0.8)' : '#FFFFFF'} style={styles.checkIcon} />}
@@ -608,7 +600,6 @@ const ChatScreen = () => {
                       <Text style={styles.reactionEmojiOption}>{emoji}</Text>
                   </TouchableOpacity>
               ))}
-              {/* --- GI-UPDATE NGA REACTION MODAL OPTIONS --- */}
               {selectedMessageForReaction?.senderId === user?.uid && (
                   <>
                     <View style={styles.reactionSeparator} />
@@ -622,7 +613,6 @@ const ChatScreen = () => {
                     </TouchableOpacity>
                   </>
               )}
-              {/* ------------------------------------------- */}
           </View>
         </TouchableOpacity>
       </Modal>
@@ -667,7 +657,7 @@ const getStyles = (colors) => StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
   container: { flex: 1, backgroundColor: colors.background },
   header: { paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight + 10 : 10, paddingBottom: 15, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.card, borderBottomLeftRadius: 25, borderBottomRightRadius: 25, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 5 },
-  backButton: { padding: 8, borderRadius: 20, backgroundColor: colors.background },
+  backButton: { padding: 8, borderRadius: 20, backgroundColor: colors.card },
   headerInfo: { flex: 1, flexDirection: 'row', alignItems: 'center', marginLeft: 15 },
   headerAvatarContainer: { position: 'relative', marginRight: 12 },
   headerAvatar: { width: 42, height: 42, borderRadius: 21 },
@@ -675,7 +665,7 @@ const getStyles = (colors) => StyleSheet.create({
   headerTextContainer: { flex: 1 },
   headerTitle: { fontSize: 18, fontWeight: 'bold', color: colors.text, marginBottom: 2 },
   headerSubtitle: { fontSize: 13, color: colors.subText, fontWeight: '500' },
-  moreButton: { padding: 8, borderRadius: 20, backgroundColor: colors.background },
+  moreButton: { padding: 8, borderRadius: 20, backgroundColor: colors.card },
   chatContainer: { flex: 1, marginTop: 10 },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   messageList: { padding: 20, flexGrow: 1, paddingBottom: 10 },
@@ -780,7 +770,6 @@ const getStyles = (colors) => StyleSheet.create({
     fontSize: 14,
     marginLeft: 2,
   },
-  // --- BAG-ONG STYLES PARA SA PAG-EDIT ---
   editingInput: {
     padding: 0,
     margin: 0,
@@ -805,7 +794,6 @@ const getStyles = (colors) => StyleSheet.create({
     opacity: 0.7,
     fontStyle: 'italic',
   },
-  // ------------------------------------
 });
 
 export default ChatScreen;
