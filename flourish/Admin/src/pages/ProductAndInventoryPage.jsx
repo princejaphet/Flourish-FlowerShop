@@ -55,7 +55,7 @@ export default function ProductAndInventoryPage() {
     description: '',
     category: '',
     sku: '',
-    variations: [{ name: '', price: '' }], // MODIFIED
+    variations: [{ name: '', price: '' }],
     stock: '',
     minStock: '',
     imageUrl: '', 
@@ -90,6 +90,15 @@ export default function ProductAndInventoryPage() {
       maximumFractionDigits: 2,
     })}`;
   };
+
+  // --- NEW: Helper function to format the price range ---
+  const formatPriceRange = (min, max) => {
+    if (min === max || max === undefined) {
+      return formatCurrency(min);
+    }
+    return `${formatCurrency(min)} - ${formatCurrency(max)}`;
+  };
+
 
   useEffect(() => {
     try {
@@ -171,13 +180,16 @@ export default function ProductAndInventoryPage() {
 
   const categories = ['all', 'Beverages', 'Food', 'Confectionery', 'Flowers', 'Bouquets', 'Artificial Flowers', 'popular bouquet', 'Fresh and New'];
 
+  // --- UPDATED: Filtering logic to check against price range ---
   const filteredProducts = products.filter(product => {
     const searchTermLower = searchTerm.toLowerCase();
     const matchesSearch =
       product.name.toLowerCase().includes(searchTermLower) ||
       product.sku.toLowerCase().includes(searchTermLower) ||
       (product.description && product.description.toLowerCase().includes(searchTermLower)) ||
-      product.price.toString().startsWith(searchTerm);
+      (product.minPrice?.toString().startsWith(searchTerm)) ||
+      (product.maxPrice?.toString().startsWith(searchTerm)) ||
+      (product.price?.toString().startsWith(searchTerm));
 
     const matchesCategory = selectedCategory === 'all' || product.category.toLowerCase() === selectedCategory.toLowerCase();
     
@@ -200,8 +212,9 @@ export default function ProductAndInventoryPage() {
       change: '-8%' 
     },
     { 
+      // --- UPDATED: Total Value calculation now uses the minimum price of each product ---
       label: 'Total Value', 
-      value: formatCurrency(filteredProducts.reduce((sum, p) => sum + p.price, 0)),
+      value: formatCurrency(filteredProducts.reduce((sum, p) => sum + (p.minPrice || p.price || 0), 0)),
       icon: DollarSign, 
       color: 'bg-green-500', 
       change: '+24%' 
@@ -316,13 +329,22 @@ export default function ProductAndInventoryPage() {
     const finalImageUrls = [...newProduct.imageUrls, ...uploadedUrls];
     const primaryImageUrl = finalImageUrls[0] || 'https://placehold.co/200x200/cccccc/ffffff?text=No+Image';
 
+    // --- NEW: Calculate min and max price from variations ---
+    const prices = newProduct.variations
+      .map(v => parseFloat(v.price))
+      .filter(p => !isNaN(p) && p >= 0);
+
+    const minPrice = prices.length > 0 ? Math.min(...prices) : 0;
+    const maxPrice = prices.length > 0 ? Math.max(...prices) : 0;
+
     try {
       const productToSave = {
         ...newProduct,
-        price: parseFloat(newProduct.variations[0].price) || 0,
+        minPrice: minPrice, // <-- ADDED
+        maxPrice: maxPrice, // <-- ADDED
         variations: newProduct.variations.map(v => ({
             name: v.name,
-            price: parseFloat(v.price)
+            price: parseFloat(v.price) || 0,
         })),
         stock: parseInt(newProduct.stock) || 0,
         minStock: parseInt(newProduct.minStock) || 10,
@@ -331,6 +353,9 @@ export default function ProductAndInventoryPage() {
         status: parseInt(newProduct.stock) === 0 ? 'Out of Stock' : parseInt(newProduct.stock) < (parseInt(newProduct.minStock) || 10) ? 'Low Stock' : 'In Stock',
         lastUpdated: new Date().toISOString().split('T')[0]
       };
+      
+      // --- REMOVED: Redundant 'price' field is no longer needed ---
+      delete productToSave.price; 
 
       if (editingProduct) {
         const productRef = doc(db, `artifacts/${canvasAppId}/public/data/products`, editingProduct.id);
@@ -379,7 +404,7 @@ export default function ProductAndInventoryPage() {
   const handleEditProduct = (productData) => {
     const variations = (productData.variations && productData.variations.length > 0)
       ? productData.variations
-      : [{ name: 'Default', price: productData.price || '' }];
+      : [{ name: 'Default', price: productData.price || productData.minPrice || '' }];
       
     const productWithImagesAndVariations = {
       ...productData,
@@ -423,7 +448,7 @@ export default function ProductAndInventoryPage() {
         return;
     }
 
-    const headers = ['ID', 'Name', 'Description', 'Category', 'SKU', 'Price', 'Stock', 'Min Stock', 'Status', 'Last Updated', 'Image URL', 'Additional Image URLs'];
+    const headers = ['ID', 'Name', 'Description', 'Category', 'SKU', 'MinPrice', 'MaxPrice', 'Stock', 'Min Stock', 'Status', 'Last Updated', 'Image URL', 'Additional Image URLs'];
     const csvRows = [headers.join(',')];
 
     productsToExport.forEach(product => {
@@ -434,7 +459,7 @@ export default function ProductAndInventoryPage() {
         };
         const row = [
             product.id, product.name, product.description, product.category, product.sku,
-            product.price, product.stock, product.minStock, product.status,
+            product.minPrice ?? product.price, product.maxPrice ?? product.price, product.stock, product.minStock, product.status,
             product.lastUpdated, product.imageUrl, `"${(product.imageUrls || []).join(', ')}"`,
         ].map(formatField);
         csvRows.push(row.join(','));
@@ -554,7 +579,8 @@ export default function ProductAndInventoryPage() {
               </div>
               <div>
                 <p className="text-sm font-medium text-slate-500 mb-1">Total Value</p>
-                <p className="text-2xl font-bold text-slate-800">{formatCurrency(filteredProducts.reduce((sum, p) => sum + p.price, 0))}</p>
+                {/* --- UPDATED: Uses the new Total Value from stats constant --- */}
+                <p className="text-2xl font-bold text-slate-800">{stats[2].value}</p>
               </div>
             </div>
           </div>
@@ -676,7 +702,10 @@ export default function ProductAndInventoryPage() {
                         <span>Stock: <span className="font-medium text-slate-700">{product.stock}</span></span>
                       </div>
                       <div className="flex justify-between items-center">
-                        <span className="text-xl font-bold text-red-600">{formatCurrency(product.price)}</span>
+                        {/* --- UPDATED: Displays price range --- */}
+                        <span className="text-xl font-bold text-red-600">
+                          {formatPriceRange(product.minPrice ?? product.price, product.maxPrice ?? product.price)}
+                        </span>
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => handleEditProduct(product)}
@@ -741,7 +770,10 @@ export default function ProductAndInventoryPage() {
                         <span className="text-slate-900 font-mono text-xs">{product.sku || 'N/A'}</span>
                       </td>
                       <td className="px-6 py-4">
-                        <span className="font-semibold text-slate-900">{formatCurrency(product.price)}</span>
+                        {/* --- UPDATED: Displays price range --- */}
+                        <span className="font-semibold text-slate-900">
+                           {formatPriceRange(product.minPrice ?? product.price, product.maxPrice ?? product.price)}
+                        </span>
                       </td>
                       <td className="px-6 py-4">
                         <span className="font-medium text-slate-900">{product.stock}</span>

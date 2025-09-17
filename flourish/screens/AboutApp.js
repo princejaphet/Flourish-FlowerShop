@@ -1,13 +1,29 @@
-import React, { useContext, useState } from 'react';
+import React, { useContext, useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, Image, TouchableOpacity, Linking, Modal, LayoutAnimation, UIManager, Platform } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import ThemeContext from '../context/ThemeContext'; // Import ThemeContext
 import appLogo from '../assets/flourish.png';
+import { initializeApp, getApps, getApp } from 'firebase/app';
+import { getFirestore, doc, onSnapshot } from "firebase/firestore";
 
 // Enable LayoutAnimation for Android
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
+
+// GI-UPDATE: Kompleto ug saktong Firebase config para sa mobile app
+const firebaseConfig = {
+    apiKey: "AIzaSyDTZKJpdPKCunl7dFpjEUPXY-eboXkPrhk",
+    authDomain: "flourish-adf09.firebaseapp.com",
+    projectId: "flourish-adf09",
+    storageBucket: "flourish-adf09.appspot.com",
+    messagingSenderId: "853529980918",
+    appId: "1:853529980918:web:abacb3f82df5a3681121d7",
+    measurementId: "G-0CEWS807Q0"
+};
+
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+const db = getFirestore(app);
 
 const FAQ_DATA = [
   {
@@ -122,7 +138,37 @@ const FaqModal = ({ visible, onClose, isDarkMode }) => {
 const AboutApp = () => {
   const { isDarkMode } = useContext(ThemeContext);
   const [isFaqModalVisible, setIsFaqModalVisible] = useState(false);
+  const [businessInfo, setBusinessInfo] = useState({
+    email: 'loading...',
+    phone: 'loading...',
+    address: 'loading...'
+  });
 
+  useEffect(() => {
+    // GIBUTANG NA NAKO IMONG ADMIN UID: Kini na ang mobasa sa data gikan sa imong admin account
+    const adminUserId = 'nEVf6hCFk8aeynpzKXwCfcT5iVD2';
+    
+    const docRef = doc(db, 'users', adminUserId);
+
+    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists() && docSnap.data().businessInfo) {
+        const info = docSnap.data().businessInfo;
+        setBusinessInfo({
+          email: info.email || 'Not available',
+          phone: info.phone || 'Not available',
+          address: info.address || 'Not available'
+        });
+      } else {
+        console.log("Admin business info not found! Make sure the admin has saved their business info at least once.");
+        setBusinessInfo({ email: 'Not found', phone: 'Not found', address: 'Not found' });
+      }
+    }, (error) => {
+        console.error("Error fetching business info: ", error);
+        setBusinessInfo({ email: 'Error', phone: 'Error', address: 'Error' });
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   const openLink = (url) => {
     Linking.openURL(url).catch(err => console.error("Couldn't load page", err));
@@ -243,18 +289,28 @@ const AboutApp = () => {
 
         <View style={[styles.section, dynamicStyles.section]}>
           <Text style={[styles.sectionTitle, dynamicStyles.sectionTitle]}>Get in Touch</Text>
-          <TouchableOpacity style={styles.contactItem} onPress={() => openLink('mailto:support@flourish.com')}>
+          
+          <TouchableOpacity style={styles.contactItem} onPress={() => openLink(`mailto:${businessInfo.email}`)}>
             <View style={[styles.contactIconContainer, { backgroundColor: '#FFD700' }]}>
               <Icon name="email-outline" size={20} color="#fff" />
             </View>
-            <Text style={[styles.contactText, dynamicStyles.contactText]}>support@flourish.com</Text>
+            <Text style={[styles.contactText, dynamicStyles.contactText]}>{businessInfo.email}</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.contactItem} onPress={() => openLink('tel:+1234567890')}>
+          
+          <TouchableOpacity style={styles.contactItem} onPress={() => openLink(`tel:${businessInfo.phone}`)}>
             <View style={[styles.contactIconContainer, { backgroundColor: '#4CAF50' }]}>
               <Icon name="phone-outline" size={20} color="#fff" />
             </View>
-            <Text style={[styles.contactText, dynamicStyles.contactText]}>+1 (234) 567-890</Text>
+            <Text style={[styles.contactText, dynamicStyles.contactText]}>{businessInfo.phone}</Text>
           </TouchableOpacity>
+          
+          <TouchableOpacity style={styles.contactItem} onPress={() => openLink(`https://maps.google.com/?q=${encodeURIComponent(businessInfo.address)}`)}>
+            <View style={[styles.contactIconContainer, { backgroundColor: '#D81B60' }]}>
+              <Icon name="map-marker-outline" size={20} color="#fff" />
+            </View>
+            <Text style={[styles.contactText, dynamicStyles.contactText]}>{businessInfo.address}</Text>
+          </TouchableOpacity>
+
           <TouchableOpacity style={styles.contactItem} onPress={() => setIsFaqModalVisible(true)}>
             <View style={[styles.contactIconContainer, { backgroundColor: '#1E90FF' }]}>
               <Icon name="help-circle-outline" size={20} color="#fff" />

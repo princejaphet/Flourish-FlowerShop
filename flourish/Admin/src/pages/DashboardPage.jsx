@@ -5,7 +5,7 @@ import { db } from '/src/firebase.js';
 import { useOutletContext } from "react-router-dom";
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  PieChart, Pie, Cell, Legend 
+  PieChart, Pie, Cell, Legend, BarChart, Bar
 } from 'recharts';
 import {
   ShoppingBag,
@@ -19,6 +19,7 @@ import {
   Eye,
   ArrowUpRight,
   ArrowDownRight,
+  AlertCircle,
 } from 'lucide-react';
 
 
@@ -147,6 +148,7 @@ const RecentActivity = ({ orders }) => (
 export default function DashboardPage() {
   const [allOrders, setAllOrders] = useState([]); 
   const [allCustomers, setAllCustomers] = useState([]);
+  const [allReports, setAllReports] = useState([]); // New state for reports
   const [recentOrders, setRecentOrders] = useState([]); 
   const [currentPage, setCurrentPage] = useState(1);
   const ORDERS_PER_PAGE = 5;
@@ -175,13 +177,13 @@ export default function DashboardPage() {
   }, []);
 
   
-  // Data fetching logic for orders and customers
+  // Data fetching logic
   useEffect(() => {
     if (!userId) return;
 
+    // Listener for Orders
     const ordersCollectionRef = collection(db, 'orders');
     const qOrders = query(ordersCollectionRef, orderBy("timestamp", "desc"));
-    
     const unsubscribeOrders = onSnapshot(qOrders, (snapshot) => {
       const fetchedOrders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setAllOrders(fetchedOrders);
@@ -192,15 +194,28 @@ export default function DashboardPage() {
       setLoading(false);
     });
 
+    // Listener for Customers
     const customersCollectionRef = collection(db, 'signup_users');
     const unsubscribeCustomers = onSnapshot(customersCollectionRef, (snapshot) => {
       const fetchedCustomers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setAllCustomers(fetchedCustomers);
     });
 
+    // START: ADDED CODE - Listener for Reports
+    const reportsCollectionRef = collection(db, 'reports');
+    const qReports = query(reportsCollectionRef, orderBy("createdAt", "desc"));
+    const unsubscribeReports = onSnapshot(qReports, (snapshot) => {
+      const fetchedReports = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setAllReports(fetchedReports);
+    }, (err) => {
+      console.error("Dashboard: Error fetching reports: ", err);
+    });
+    // END: ADDED CODE
+
     return () => {
       unsubscribeOrders();
       unsubscribeCustomers();
+      unsubscribeReports(); // Cleanup listener
     };
   }, [userId]);
 
@@ -256,7 +271,6 @@ export default function DashboardPage() {
           const bestSellersRef = doc(db, 'artifacts/flourish-admin-app/public/data/bestsellers/top5');
           const productNames = topFlowers.map(flower => flower.name);
           await setDoc(bestSellersRef, { productNames: productNames });
-          console.log("Successfully updated the bestsellers list for the homepage.");
         } catch (e) {
           console.error("Error updating bestsellers list in Firestore:", e);
         }
@@ -267,7 +281,7 @@ export default function DashboardPage() {
 
 
   // Calculate other derived data
-  const chartData = useMemo(() => {
+  const hourlyChartData = useMemo(() => {
       const hourlyData = Array.from({ length: 24 }, (_, i) => ({ name: `${i}:00`, Sales: 0, Orders: 0 }));
       filteredOrders.forEach(order => {
           if (order.timestamp) {
@@ -279,6 +293,42 @@ export default function DashboardPage() {
       return hourlyData;
   }, [filteredOrders]);
   
+  const weeklySalesData = useMemo(() => {
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const last7DaysData = [];
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
+
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(today.getDate() - i);
+      last7DaysData.push({
+        name: days[d.getDay()],
+        Sales: 0,
+        fullDate: d.toISOString().split('T')[0]
+      });
+    }
+
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(today.getDate() - 6);
+    sevenDaysAgo.setHours(0, 0, 0, 0);
+
+    allOrders.forEach(order => {
+      if (order.timestamp && order.timestamp.toDate) {
+        const orderDate = order.timestamp.toDate();
+        if (orderDate >= sevenDaysAgo && orderDate <= today) {
+          const orderDateString = orderDate.toISOString().split('T')[0];
+          const dayData = last7DaysData.find(d => d.fullDate === orderDateString);
+          if (dayData) {
+            dayData.Sales += order.totalAmount || 0;
+          }
+        }
+      }
+    });
+    
+    return last7DaysData.map(({ name, Sales }) => ({ name, Sales }));
+  }, [allOrders]);
+
   const totalPages = Math.ceil(filteredOrders.length / ORDERS_PER_PAGE);
   
   const pieChartData = useMemo(() => [
@@ -287,8 +337,40 @@ export default function DashboardPage() {
     { name: 'Completed', value: filteredOrders.filter(o => o.status === 'Delivered').length },
     { name: 'Cancelled', value: filteredOrders.filter(o => o.status === 'Cancelled').length },
   ].filter(item => item.value > 0), [filteredOrders]);
+  
+  // START: MODIFIED CODE - Pie chart data now comes from 'reports' collection by STATUS
+  const reportStatusPieChartData = useMemo(() => {
+    if (!startDate || !endDate) return [];
+    
+    // 1. Filter reports by the selected date range
+    const filteredReports = allReports.filter(report => {
+      if (!report.createdAt || typeof report.createdAt.toDate !== 'function') return false;
+      const reportDate = report.createdAt.toDate();
+      return reportDate >= startDate && reportDate <= endDate;
+    });
+
+    // 2. Count reports by their status
+    const statusCounts = { 'New': 0, 'Replied': 0, 'Archived': 0 };
+    filteredReports.forEach(report => {
+      // Normalize status names (e.g., 'new' -> 'New')
+      const status = report.status ? report.status.charAt(0).toUpperCase() + report.status.slice(1) : 'New';
+      if (statusCounts.hasOwnProperty(status)) {
+        statusCounts[status]++;
+      } else {
+        // If a new status appears, handle it gracefully
+        statusCounts['Other'] = (statusCounts['Other'] || 0) + 1;
+      }
+    });
+
+    // 3. Format for the chart
+    return Object.entries(statusCounts)
+      .map(([name, value]) => ({ name, value }))
+      .filter(item => item.value > 0);
+  }, [allReports, startDate, endDate]);
 
   const PIE_CHART_COLORS = { 'New Orders': '#EF4444', 'Processing': '#F97316', 'Completed': '#10B981', 'Cancelled': '#6B7280' };
+  const REPORT_STATUS_COLORS = { 'New': '#F59E0B', 'Replied': '#3B82F6', 'Archived': '#6B7280', 'Other': '#10B981' };
+  // END: MODIFIED CODE
   
   const totalRevenue = useMemo(() => filteredOrders.reduce((sum, order) => sum + (order.totalAmount || 0), 0), [filteredOrders]);
   
@@ -339,53 +421,112 @@ export default function DashboardPage() {
       </div>
       <div className="p-6 space-y-8">
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          
           <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm p-6">
-            <div className="mb-6">
-              <h2 className="text-xl font-bold text-slate-900 mb-2">Today's Sales Overview</h2>
-              <p className="text-slate-600">Hourly sales performance and order trends</p>
+            <div>
+              <div className="mb-4">
+                <h2 className="text-xl font-bold text-slate-900 mb-2">Today's Sales Overview</h2>
+                <p className="text-slate-600">Hourly performance for the selected day</p>
+              </div>
+              <div className="h-64 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={hourlyChartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="salesGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#10B981" stopOpacity={0.4}/>
+                        <stop offset="95%" stopColor="#10B981" stopOpacity={0}/>
+                      </linearGradient>
+                      <linearGradient id="ordersGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#EF4444" stopOpacity={0.4}/>
+                        <stop offset="95%" stopColor="#EF4444" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6B7280' }} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6B7280' }} />
+                    <Tooltip contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', backgroundColor: 'white', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' }}/>
+                    <Area type="monotone" dataKey="Orders" stroke="#EF4444" strokeWidth={3} fill="url(#ordersGradient)" />
+                    <Area type="monotone" dataKey="Sales" stroke="#10B981" strokeWidth={3} fill="url(#salesGradient)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
             </div>
-            <div className="h-80 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="salesGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10B981" stopOpacity={0.4}/>
-                      <stop offset="95%" stopColor="#10B981" stopOpacity={0}/>
-                    </linearGradient>
-                    <linearGradient id="ordersGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#EF4444" stopOpacity={0.4}/>
-                      <stop offset="95%" stopColor="#EF4444" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6B7280' }} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6B7280' }} />
-                  <Tooltip contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', backgroundColor: 'white', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' }}/>
-                  <Area type="monotone" dataKey="Orders" stroke="#EF4444" strokeWidth={3} fill="url(#ordersGradient)" />
-                  <Area type="monotone" dataKey="Sales" stroke="#10B981" strokeWidth={3} fill="url(#salesGradient)" />
-                </AreaChart>
-              </ResponsiveContainer>
+
+            <div className="my-6 border-t border-slate-200"></div>
+
+            <div>
+              <div className="mb-4">
+                <h2 className="text-xl font-bold text-slate-900 mb-2">Weekly Sales Trend</h2>
+                <p className="text-slate-600">Sales performance over the last 7 days</p>
+              </div>
+              <div className="h-64 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={weeklySalesData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6B7280' }}/>
+                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6B7280' }}/>
+                    <Tooltip cursor={{fill: '#f1f5f9'}} contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', backgroundColor: 'white' }}/>
+                    <Bar dataKey="Sales" name="Sales (₱)" fill="#10B981" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             </div>
           </div>
+          
+          {/* START: MODIFIED CARD - Now shows Report Status */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
-            <div className="mb-6">
-              <h2 className="text-xl font-bold text-slate-900 mb-2">Order Status</h2>
-              <p className="text-slate-600">Distribution for the selected day</p>
+            <div>
+              <div className="mb-4">
+                <h2 className="text-xl font-bold text-slate-900 mb-2">Order Status</h2>
+                <p className="text-slate-600">Distribution for the selected day</p>
+              </div>
+              <div className="h-64 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={pieChartData} cx="50%" cy="50%" labelLine={false} outerRadius={70} fill="#8884d8" dataKey="value" nameKey="name">
+                      {pieChartData.map((entry) => (
+                        <Cell key={`cell-${entry.name}`} fill={PIE_CHART_COLORS[entry.name]} />
+                      ))}
+                    </Pie>
+                    <Tooltip contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', backgroundColor: 'white', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' }} />
+                    <Legend iconType="circle" />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
             </div>
-            <div className="h-80 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={pieChartData} cx="50%" cy="50%" labelLine={false} outerRadius={80} fill="#8884d8" dataKey="value" nameKey="name">
-                    {pieChartData.map((entry) => (
-                      <Cell key={`cell-${entry.name}`} fill={PIE_CHART_COLORS[entry.name]} />
-                    ))}
-                  </Pie>
-                  <Tooltip contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', backgroundColor: 'white', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' }} />
-                  <Legend iconType="circle" />
-                </PieChart>
-              </ResponsiveContainer>
+
+            <div className="my-6 border-t border-slate-200"></div>
+
+            <div>
+              <div className="mb-4">
+                <h2 className="text-xl font-bold text-slate-900 mb-2">Report Status</h2>
+                <p className="text-slate-600">Breakdown of report statuses</p>
+              </div>
+              <div className="h-64 w-full">
+                {reportStatusPieChartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={reportStatusPieChartData} cx="50%" cy="50%" labelLine={false} outerRadius={70} fill="#8884d8" dataKey="value" nameKey="name">
+                        {reportStatusPieChartData.map((entry) => (
+                          <Cell key={`cell-${entry.name}`} fill={REPORT_STATUS_COLORS[entry.name]} />
+                        ))}
+                      </Pie>
+                      <Tooltip contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', backgroundColor: 'white', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' }} />
+                      <Legend iconType="circle" />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-full text-center text-slate-400">
+                    <AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                    <p className="text-sm font-medium">No reports found</p>
+                    <p className="text-xs">No reports were filed in this period.</p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
+          {/* END: MODIFIED CARD */}
+
           <BestSellingFlowers topFlowers={topFlowers} />
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -452,4 +593,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-

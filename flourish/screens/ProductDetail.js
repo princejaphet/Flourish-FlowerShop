@@ -14,14 +14,14 @@ import {
   ActivityIndicator,
   FlatList,
   Share,
-  Animated, // Added for skeleton loader
+  Animated,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import ThemeContext from '../context/ThemeContext';
 
 const { width } = Dimensions.get('window');
 
-// --- NEW: Skeleton Loader for the Product Detail page ---
+// --- Skeleton Loader for the Product Detail page ---
 const ProductDetailSkeleton = ({ isDarkMode }) => {
     const shimmerAnimation = useRef(new Animated.Value(0)).current;
     const styles = getStyles(isDarkMode);
@@ -88,9 +88,10 @@ const ProductDetail = ({ route, navigation }) => {
   const { isDarkMode } = useContext(ThemeContext);
   const styles = getStyles(isDarkMode);
 
-  const [isPageLoading, setIsPageLoading] = useState(true); // State for the skeleton loader
+  const [isPageLoading, setIsPageLoading] = useState(true);
   const [quantity, setQuantity] = useState(1);
   const [selectedVariation, setSelectedVariation] = useState(null);
+  const [hasUserSelected, setHasUserSelected] = useState(false);
   const [isNoteModalVisible, setIsNoteModalVisible] = useState(false);
   const [addonNote, setAddonNote] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -99,7 +100,6 @@ const ProductDetail = ({ route, navigation }) => {
   const flatListRef = useRef(null);
 
   useEffect(() => {
-    // Simulate data loading
     const timer = setTimeout(() => {
       setIsPageLoading(false);
     }, 1500);
@@ -110,16 +110,19 @@ const ProductDetail = ({ route, navigation }) => {
     if (product.variations && product.variations.length > 0) {
       setSelectedVariation(product.variations[0]);
     } else {
-      setSelectedVariation({ name: 'Default', price: product.price });
+      setSelectedVariation({ name: 'Default', price: product.price ?? product.minPrice ?? 0 });
     }
   }, [product]);
 
   const images = (product.imageUrls && product.imageUrls.length > 0)
     ? product.imageUrls
     : [product.imageUrl || 'https://placehold.co/400x400/cccccc/ffffff?text=No+Image'];
-
-  const currentPrice = selectedVariation ? selectedVariation.price : product.price;
-  const finalPrice = isNewUser ? currentPrice * 0.95 : currentPrice;
+  
+  const hasRange = product.minPrice !== undefined && product.maxPrice !== undefined;
+  const isRange = hasRange && product.minPrice !== product.maxPrice;
+  
+  const currentPrice = selectedVariation ? selectedVariation.price : (product.minPrice ?? product.price ?? 0);
+  const finalPriceForCalculation = isNewUser ? currentPrice * 0.95 : currentPrice;
 
   const incrementQuantity = () => setQuantity(prev => prev + 1);
   const decrementQuantity = () => setQuantity(prev => (prev > 1 ? prev - 1 : 1));
@@ -130,8 +133,12 @@ const ProductDetail = ({ route, navigation }) => {
   
   const handleShare = async () => {
     try {
-      const productUrl = `https://your-flower-shop.com/product/${product.id || '123'}`; 
-      const message = `Check out this amazing product: ${product.name}!\n\nPrice: ₱${finalPrice.toFixed(2)}\n\n${product.description}\n\nSee more here: ${productUrl}`;
+      const productUrl = `https://your-flower-shop.com/product/${product.id || '123'}`;
+      // --- UPDATED: Share message reflects the new price range format ---
+      const priceString = isRange 
+        ? `From ₱${product.minPrice.toFixed(2)} to ₱${product.maxPrice.toFixed(2)}` 
+        : `₱${currentPrice.toFixed(2)}`;
+      const message = `Check out this amazing product: ${product.name}!\n\nPrice: ${priceString}\n\n${product.description}\n\nSee more here: ${productUrl}`;
       await Share.share({ message: message, title: `Share ${product.name}` });
     } catch (error) {
       alert(error.message);
@@ -142,7 +149,7 @@ const ProductDetail = ({ route, navigation }) => {
     setIsLoading(true);
     setTimeout(() => {
       const orderDetails = {
-        product: { ...product, price: finalPrice, originalPrice: currentPrice },
+        product: { ...product, price: finalPriceForCalculation, originalPrice: currentPrice },
         quantity,
         variation: selectedVariation,
         note: addonNote,
@@ -221,7 +228,6 @@ const ProductDetail = ({ route, navigation }) => {
             </TouchableOpacity>
           </View>
           
-          {/* START: FIX - Added rating summary display */}
           {product.reviews && product.reviews.length > 0 && (
             <View style={styles.ratingSummaryContainer}>
                 <StarRating rating={
@@ -234,15 +240,24 @@ const ProductDetail = ({ route, navigation }) => {
                 </Text>
             </View>
           )}
-          {/* END: FIX */}
 
-          {isNewUser && selectedVariation ? (
-            <View style={styles.priceDisplayContainer}>
-              <Text style={styles.originalPriceText}>₱{selectedVariation.price.toFixed(2)}</Text>
-              <Text style={styles.productPrice}>₱{finalPrice.toFixed(2)}</Text>
-            </View>
+          {/* --- UPDATED: Main Price Display now shows 'From ... to ...' --- */}
+          {isRange && !hasUserSelected ? (
+            <Text style={styles.productPrice}>
+              <Text style={styles.fromText}>From </Text>
+              ₱{product.minPrice.toFixed(2)}
+              <Text style={styles.fromText}> to </Text>
+              ₱{product.maxPrice.toFixed(2)}
+            </Text>
           ) : (
-            <Text style={styles.productPrice}>₱{finalPrice.toFixed(2)}</Text>
+            isNewUser ? (
+              <View style={styles.priceDisplayContainer}>
+                <Text style={styles.originalPriceText}>₱{currentPrice.toFixed(2)}</Text>
+                <Text style={styles.productPrice}>₱{finalPriceForCalculation.toFixed(2)}</Text>
+              </View>
+            ) : (
+              <Text style={styles.productPrice}>₱{currentPrice.toFixed(2)}</Text>
+            )
           )}
 
           <Text style={styles.sectionTitle}>Description</Text>
@@ -258,7 +273,7 @@ const ProductDetail = ({ route, navigation }) => {
           </TouchableOpacity>
           {addonNote ? <Text style={styles.notePreview} numberOfLines={2}>Your Note: "{addonNote}"</Text> : null}
           
-          {product.variations && product.variations.length > 0 && (
+          {product.variations && product.variations.length > 1 && (
             <>
               <Text style={styles.sectionTitle}>Size</Text>
               <View style={styles.sizeSelector}>
@@ -266,7 +281,10 @@ const ProductDetail = ({ route, navigation }) => {
                   <TouchableOpacity
                     key={variation.name}
                     style={[ styles.sizeOption, selectedVariation?.name === variation.name && styles.sizeOptionSelected, ]}
-                    onPress={() => setSelectedVariation(variation)}
+                    onPress={() => {
+                        setSelectedVariation(variation);
+                        setHasUserSelected(true);
+                    }}
                   >
                     <Text style={[ styles.sizeText, selectedVariation?.name === variation.name && styles.sizeTextSelected, ]}>
                       {variation.name}
@@ -319,12 +337,12 @@ const ProductDetail = ({ route, navigation }) => {
       <View style={styles.footer}>
         <View style={styles.totalPriceContainer}>
           <Text style={styles.totalPriceLabel}>Total Price</Text>
-          <Text style={styles.totalPriceValue}>₱{(finalPrice * quantity).toFixed(2)}</Text>
+          <Text style={styles.totalPriceValue}>₱{(finalPriceForCalculation * quantity).toFixed(2)}</Text>
         </View>
         <TouchableOpacity
           style={styles.checkoutButton}
           onPress={handleCheckout}
-          disabled={isLoading}
+          disabled={!selectedVariation || isLoading}
         >
           {isLoading ? (
             <ActivityIndicator size="small" color="#FFFFFF" />
@@ -406,7 +424,6 @@ const getStyles = (isDarkMode) => StyleSheet.create({
   productName: { fontSize: 24, fontWeight: 'bold', color: isDarkMode ? '#FFF' : '#333', flex: 1, marginRight: 10 },
   heartIcon: { color: isDarkMode ? '#AAA' : '#888' },
 
-  // START: FIX - Added and adjusted styles for rating summary
   ratingSummaryContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -423,17 +440,19 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     fontSize: 22, 
     fontWeight: 'bold', 
     color: '#D81B60', 
-    // Removed marginTop to improve spacing with new rating section
-    marginBottom: 20 
+    marginBottom: 20,
+    flexWrap: 'wrap', // Added to handle longer price ranges
   },
   priceDisplayContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    // Removed marginTop to improve spacing
     marginBottom: 20,
   },
-  // END: FIX
-
+  fromText: {
+    fontSize: 20,
+    fontWeight: '500',
+    color: isDarkMode ? '#bbb' : '#555',
+  },
   originalPriceText: {
     fontSize: 18,
     color: isDarkMode ? '#888' : '#666',

@@ -52,7 +52,7 @@ export const auth = getAuth(firebaseApp);
 export const db = getFirestore(firebaseApp);
 
 
-// --- NEW: Full-page skeleton loader that matches the BrowseProduct layout ---
+// --- Full-page skeleton loader that matches the BrowseProduct layout ---
 const BrowseProductSkeleton = ({ isDarkMode }) => {
     const shimmerAnimation = useRef(new Animated.Value(0)).current;
     const styles = getStyles(isDarkMode);
@@ -259,17 +259,20 @@ const BrowseProduct = () => {
   const categories = useMemo(() => ['All', ...Array.from(new Set(products.map(p => p.category))).sort()], [products]);
   
   const filteredProducts = useMemo(() => {
-    let filtered = products.filter(product => 
-      (selectedCategory === 'All' || product.category === selectedCategory) && 
-      (product.price >= priceRange.min && product.price <= priceRange.max)
-    );
+    let filtered = products.filter(product => {
+      const minP = product.minPrice ?? product.price ?? 0;
+      const maxP = product.maxPrice ?? product.price ?? 0;
+      const categoryMatch = (selectedCategory === 'All' || product.category === selectedCategory);
+      const priceMatch = (maxP >= priceRange.min && minP <= priceRange.max);
+      return categoryMatch && priceMatch;
+    });
 
     switch (sortBy) {
       case 'price-low':
-        filtered.sort((a, b) => a.price - b.price);
+        filtered.sort((a, b) => (a.minPrice ?? a.price) - (b.minPrice ?? b.price));
         break;
       case 'price-high':
-        filtered.sort((a, b) => b.price - a.price);
+        filtered.sort((a, b) => (b.maxPrice ?? b.price) - (a.maxPrice ?? a.price));
         break;
       case 'name':
       default:
@@ -288,7 +291,11 @@ const BrowseProduct = () => {
   };
 
   const renderProductItem = ({ item }) => {
-    const discountedPrice = item.price * 0.95;
+    // --- UPDATED: New cleaner price display logic ---
+    const hasRange = item.minPrice !== undefined && item.maxPrice !== undefined;
+    const isRange = hasRange && item.minPrice !== item.maxPrice;
+    const basePrice = item.minPrice ?? item.price ?? 0;
+
     return (
         <TouchableOpacity style={styles.productCard} onPress={() => navigation.navigate('ProductDetail', { product: item, isNewUser })}>
             <Image source={{ uri: item.imageUrl || 'https://placehold.co/200x200/cccccc/ffffff?text=No+Image' }} style={styles.productImage} />
@@ -304,12 +311,21 @@ const BrowseProduct = () => {
                 )}
                 <View style={styles.priceRow}>
                     {isNewUser ? (
-                        <View>
-                            <Text style={styles.originalPrice}>₱{item.price.toFixed(2)}</Text>
-                            <Text style={styles.productPrice}>₱{discountedPrice.toFixed(2)}</Text>
-                        </View>
+                      <View>
+                          <Text style={styles.originalPrice}>
+                              {isRange && <Text style={styles.fromText}>From </Text>}
+                              ₱{basePrice.toFixed(2)}
+                          </Text>
+                          <Text style={styles.productPrice}>
+                              {isRange && <Text style={styles.fromText}>From </Text>}
+                              ₱{(basePrice * 0.95).toFixed(2)}
+                          </Text>
+                      </View>
                     ) : (
-                        <Text style={styles.productPrice}>₱{item.price.toFixed(2)}</Text>
+                      <Text style={styles.productPrice}>
+                          {isRange && <Text style={styles.fromText}>From </Text>}
+                          ₱{basePrice.toFixed(2)}
+                      </Text>
                     )}
                     <TouchableOpacity style={styles.productAddButton} onPress={() => navigation.navigate('ProductDetail', { product: item, isNewUser })}>
                         <Text style={styles.plusIcon}>+</Text>
@@ -520,6 +536,12 @@ const getStyles = (isDarkMode) => StyleSheet.create({
     fontSize: 12,
     color: isDarkMode ? '#aaa' : '#666',
     textDecorationLine: 'line-through',
+  },
+  // --- ADDED: Style for the 'From' text to make it cleaner ---
+  fromText: {
+      fontSize: 14,
+      fontWeight: '500',
+      color: isDarkMode ? '#bbb' : '#555',
   },
   productAddButton: {
     backgroundColor: '#D81B60',

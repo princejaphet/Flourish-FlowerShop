@@ -95,6 +95,9 @@ export default function OrderAndStatusPage() {
       case 'processing':
         q = baseQuery('Processing');
         break;
+      case 'shipped': // BAG-O NGA CASE PARA SA SHIPPED
+        q = baseQuery('Shipped');
+        break;
       case 'delivered':
         q = baseQuery('Delivered');
         break;
@@ -136,8 +139,8 @@ export default function OrderAndStatusPage() {
       await updateDoc(orderDocRef, { status: newStatus });
       
       const order = orders.find(o => o.id === orderId);
-      if (['Processing', 'Delivered'].includes(newStatus) && order?.customerEmail) {
-        // eslint-disable-next-line no-undef
+      if (['Processing', 'Shipped', 'Delivered'].includes(newStatus) && order?.customerEmail) { // GIDUGANG ANG 'SHIPPED' SA EMAIL TRIGGER
+        // eslint-disable--line no-undef
         const serverBaseUrl = process.env.NODE_ENV === 'production' ? 'YOUR_DEPLOYED_SERVER_URL' : 'http://localhost:3000';
         const payload = { customerEmail: order.customerEmail, customerName: order.customerName, orderId, status: newStatus, productName: order.product?.name || 'Product' };
 
@@ -219,6 +222,7 @@ export default function OrderAndStatusPage() {
     switch (status) {
       case 'Pending': return 'bg-yellow-100 text-yellow-800';
       case 'Processing': return 'bg-blue-100 text-blue-800';
+      case 'Shipped': return 'bg-purple-100 text-purple-800'; // BAG-O NGA COLOR PARA SA SHIPPED
       case 'Delivered': return 'bg-green-100 text-green-800';
       case 'Cancelled': return 'bg-red-100 text-red-800';
       default: return 'bg-gray-100 text-gray-800';
@@ -240,6 +244,7 @@ export default function OrderAndStatusPage() {
     total: orders.length,
     pending: orders.filter(order => order.status === 'Pending').length,
     processing: orders.filter(order => order.status === 'Processing').length,
+    shipped: orders.filter(order => order.status === 'Shipped').length, // BAG-O NGA STAT
     delivered: orders.filter(order => order.status === 'Delivered').length,
     cancelled: orders.filter(order => order.status === 'Cancelled').length
   };
@@ -292,8 +297,8 @@ export default function OrderAndStatusPage() {
           </div>
         </div>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        {/* Stats Cards - GI-UPDATE ANG GRID */}
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
           <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all duration-300 group">
             <div className="flex items-center gap-3">
               <div className="p-3 rounded-xl bg-blue-100 text-blue-600 group-hover:scale-110 transition-transform duration-300">
@@ -324,6 +329,18 @@ export default function OrderAndStatusPage() {
               <div>
                 <p className="text-sm font-medium text-slate-500 mb-1">Processing</p>
                 <p className="text-2xl font-bold text-slate-800">{orderStats.processing}</p>
+              </div>
+            </div>
+          </div>
+          {/* BAG-O NGA STAT CARD PARA SA SHIPPED */}
+          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all duration-300 group">
+            <div className="flex items-center gap-3">
+              <div className="p-3 rounded-xl bg-purple-100 text-purple-600 group-hover:scale-110 transition-transform duration-300">
+                <Truck size={20} />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-slate-500 mb-1">Shipped</p>
+                <p className="text-2xl font-bold text-slate-800">{orderStats.shipped}</p>
               </div>
             </div>
           </div>
@@ -384,6 +401,15 @@ export default function OrderAndStatusPage() {
                   }`}
                 >
                   Processing
+                </button>
+                {/* BAG-O NGA FILTER BUTTON PARA SA SHIPPED */}
+                <button
+                  onClick={() => setCurrentFilter('shipped')}
+                  className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                    currentFilter === 'shipped' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'
+                  }`}
+                >
+                  Shipped
                 </button>
                 <button
                   onClick={() => setCurrentFilter('delivered')}
@@ -480,6 +506,7 @@ export default function OrderAndStatusPage() {
                           <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
                             order.status === 'Pending' ? 'bg-yellow-100 text-yellow-800' :
                             order.status === 'Processing' ? 'bg-blue-100 text-blue-800' :
+                            order.status === 'Shipped' ? 'bg-purple-100 text-purple-800' : // BAG-O
                             order.status === 'Delivered' ? 'bg-green-100 text-green-800' :
                             'bg-red-100 text-red-800'
                           }`}>
@@ -512,13 +539,24 @@ export default function OrderAndStatusPage() {
                                 <Check size={16} />
                               </button>
                             )}
+                            {/* GI-ILISDAN ANG ACTION GIKAN SA DELIVERED NGADTO SA SHIPPED */}
                             {order.status === 'Processing' && (
+                              <button 
+                                onClick={() => updateOrderStatus(order.id, 'Shipped')}
+                                className="p-2 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-all duration-200"
+                                title="Mark as shipped"
+                              >
+                                <Truck size={16} />
+                              </button>
+                            )}
+                            {/* BAG-O NGA BUTTON PARA I-MARK AS DELIVERED KUNG SHIPPED NA */}
+                            {order.status === 'Shipped' && (
                               <button 
                                 onClick={() => updateOrderStatus(order.id, 'Delivered')}
                                 className="p-2 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-all duration-200"
                                 title="Mark as delivered"
                               >
-                                <Truck size={16} />
+                                <CheckCircle size={16} />
                               </button>
                             )}
                             {order.status !== 'Cancelled' && (

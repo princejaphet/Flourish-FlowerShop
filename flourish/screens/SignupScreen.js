@@ -238,6 +238,18 @@ export default function SignupScreen() {
     }
   };
 
+  const handlePhoneNumberChange = (text) => {
+    const cleaned = text.replace(/[^0-9]/g, '');
+    const limited = cleaned.substring(0, 11);
+    setPhoneNumber(limited);
+
+    if (errors.phoneNumber) {
+        const newErrors = { ...errors };
+        delete newErrors.phoneNumber;
+        setErrors(newErrors);
+    }
+  };
+
   const handleNextStep = () => {
     const newErrors = {};
 
@@ -420,7 +432,7 @@ export default function SignupScreen() {
           <>
             <Text style={styles.subtitle}>Contact & Address</Text>
             <FloatingLabelInput label="Email Address *" value={email} onChangeText={onInputChange(setEmail, 'email')} keyboardType="email-address" autoCapitalize="none" icon={<MaterialCommunityIcons name="email-outline" size={20} color="#333" />} hasError={!!errors.email} />
-            <FloatingLabelInput label="Phone Number *" value={phoneNumber} onChangeText={onInputChange(setPhoneNumber, 'phoneNumber')} keyboardType="phone-pad" icon={<Ionicons name="call-outline" size={20} color="#333" />} hasError={!!errors.phoneNumber}/>
+            <FloatingLabelInput label="Phone Number *" value={phoneNumber} onChangeText={handlePhoneNumberChange} keyboardType="phone-pad" icon={<Ionicons name="call-outline" size={20} color="#333" />} hasError={!!errors.phoneNumber} maxLength={11}/>
             <FloatingLabelInput label="Address *" value={address} onChangeText={onInputChange(setAddress, 'address')} icon={<Ionicons name="location-outline" size={20} color="#333" />} hasError={!!errors.address}/>
           </>
         );

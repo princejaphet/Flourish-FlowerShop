@@ -9,10 +9,15 @@ import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, doc, onSnapshot, setDoc } from "firebase/firestore";
 
 // --- Firebase Initialization ---
-// NOTE: __firebase_config is a global variable provided in the execution environment.
-const firebaseConfig = typeof __firebase_config !== 'undefined'
-  ? JSON.parse(__firebase_config)
-  : { apiKey: "...", authDomain: "...", projectId: "...", storageBucket: "...", messagingSenderId: "...", appId: "..." };
+const firebaseConfig = {
+  apiKey: "AIzaSyDTZKJpdPKCunl7dFpjEUPXY-eboXkPrhk",
+  authDomain: "flourish-adf09.firebaseapp.com",
+  projectId: "flourish-adf09",
+  storageBucket: "flourish-adf09.appspot.com",
+  messagingSenderId: "853529980918",
+  appId: "1:853529980918:web:b1d9c4f828a1c3d1e1f1a1"
+};
+
 
 // Prevent re-initialization error
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
@@ -75,7 +80,7 @@ const SettingCard = ({ title, description, children, icon: Icon }) => (
   
 
 const SettingsPage = () => {
-  const [activeTab, setActiveTab] = React.useState('profile');
+  const [activeTab, setActiveTab] = React.useState('business');
   const [showPassword, setShowPassword] = React.useState(false);
   const [isDarkMode, setIsDarkMode] = React.useState(false);
   const [notifications, setNotifications] = React.useState({
@@ -89,9 +94,8 @@ const SettingsPage = () => {
     name: 'Flourish Flower Shop',
     email: 'admin@flourish.com',
     phone: '+1 (555) 123-4567',
-    address: '123 Garden Street, Bloom City, BC 12345',
-    website: 'www.flourish.com',
-    description: 'Premium flower arrangements and gifts for every occasion'
+    address: '123 Garden Street, Bloom City, BC 12345'
+    // GIKUHA: website ug description
   });
 
   const [profileImageFile, setProfileImageFile] = React.useState(null);
@@ -291,11 +295,9 @@ const SettingsPage = () => {
             <InputField label="Business Phone" value={businessInfo.phone} onChange={(e) => handleBusinessInfoChange('phone', e.target.value)} placeholder="Enter business phone" icon={Phone}/>
           </div>
           <InputField label="Business Address" value={businessInfo.address} onChange={(e) => handleBusinessInfoChange('address', e.target.value)} placeholder="Enter full address" icon={MapPin}/>
-          <InputField label="Website" value={businessInfo.website} onChange={(e) => handleBusinessInfoChange('website', e.target.value)} placeholder="Enter website URL" icon={Globe}/>
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-2">Business Description</label>
-            <textarea value={businessInfo.description} onChange={(e) => handleBusinessInfoChange('description', e.target.value)} placeholder="Describe your flower shop" rows={3} className="w-full px-3 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all duration-200 resize-none"/>
-          </div>
+          
+          {/* GI-KUHA ANG WEBSITE UG DESCRIPTION DINHI */}
+
         </div>
       </SettingCard>
       <SettingCard title="Operating Hours" description="Set your shop's operating schedule" icon={Clock}>

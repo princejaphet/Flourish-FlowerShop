@@ -409,33 +409,46 @@ const Homepage = ({ navigation }) => {
   };
 
   const renderProduct = ({ item }) => {
-    const discountedPrice = item.price * 0.95;
+    // --- UPDATED: New cleaner price display logic ---
+    const hasRange = item.minPrice !== undefined && item.maxPrice !== undefined;
+    const isRange = hasRange && item.minPrice !== item.maxPrice;
+    const basePrice = item.minPrice ?? item.price ?? 0;
+
     return (
-        <TouchableOpacity
-            style={styles.product}
-            onPress={() => navigation.navigate('ProductDetail', { product: item, isNewUser })}
-        >
-            <Image source={{ uri: item.imageUrl || 'https://placehold.co/200x200/cccccc/ffffff?text=No+Image' }} style={styles.productImage} />
-            <View style={styles.productInfo}>
-                <Text style={styles.productName} numberOfLines={2}>{item.name}</Text>
-                <View style={styles.priceRow}>
-                    {isNewUser ? (
-                        <View>
-                            <Text style={styles.originalPrice}>₱{item.price.toFixed(2)}</Text>
-                            <Text style={styles.productPrice}>₱{discountedPrice.toFixed(2)}</Text>
-                        </View>
-                    ) : (
-                        <Text style={styles.productPrice}>₱{item.price.toFixed(2)}</Text>
-                    )}
-                    <TouchableOpacity
-                        style={styles.productAddButton}
-                        onPress={() => navigation.navigate('ProductDetail', { product: item, isNewUser })}
-                    >
-                        <Text style={styles.plusIcon}>+</Text>
-                    </TouchableOpacity>
-                </View>
-            </View>
-        </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.product}
+        onPress={() => navigation.navigate('ProductDetail', { product: item, isNewUser })}
+      >
+        <Image source={{ uri: item.imageUrl || 'https://placehold.co/200x200/cccccc/ffffff?text=No+Image' }} style={styles.productImage} />
+        <View style={styles.productInfo}>
+          <Text style={styles.productName} numberOfLines={2}>{item.name}</Text>
+          <View style={styles.priceRow}>
+            {isNewUser ? (
+              <View>
+                <Text style={styles.originalPrice}>
+                  {isRange && <Text style={styles.fromText}>From </Text>}
+                  ₱{basePrice.toFixed(2)}
+                </Text>
+                <Text style={styles.productPrice}>
+                  {isRange && <Text style={styles.fromText}>From </Text>}
+                  ₱{(basePrice * 0.95).toFixed(2)}
+                </Text>
+              </View>
+            ) : (
+              <Text style={styles.productPrice}>
+                {isRange && <Text style={styles.fromText}>From </Text>}
+                ₱{basePrice.toFixed(2)}
+              </Text>
+            )}
+            <TouchableOpacity
+              style={styles.productAddButton}
+              onPress={() => navigation.navigate('ProductDetail', { product: item, isNewUser })}
+            >
+              <Text style={styles.plusIcon}>+</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </TouchableOpacity>
     );
   };
 
@@ -676,6 +689,12 @@ const getStyles = (isDarkMode, theme) => StyleSheet.create({
         fontSize: 12,
         color: isDarkMode ? '#aaa' : '#666',
         textDecorationLine: 'line-through',
+    },
+    // --- ADDED: Style for the 'From' text to make it cleaner ---
+    fromText: {
+        fontSize: 14,
+        fontWeight: '500',
+        color: isDarkMode ? '#bbb' : '#555',
     },
     productAddButton: {
         backgroundColor: '#D81B60',

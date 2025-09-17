@@ -82,20 +82,21 @@ const OrderTrackingScreen = ({ route, navigation }) => {
   const [generalFeedbackImage, setGeneralFeedbackImage] = useState(null); 
   const [isGeneralFeedbackSubmitting, setIsGeneralFeedbackSubmitting] = useState(false);
 
-  // Updated state for cancellation
+  // State for cancellation modal
   const [isCancelModalVisible, setIsCancelModalVisible] = useState(false);
   const [selectedCancelReason, setSelectedCancelReason] = useState(null);
   const [customCancelReason, setCustomCancelReason] = useState('');
   const [isCancelling, setIsCancelling] = useState(false);
+  const [showCancellationSuccess, setShowCancellationSuccess] = useState(false);
 
-  // START: MODIFIED CODE
   // State for the report issue modal
   const [isReportModalVisible, setIsReportModalVisible] = useState(false);
   const [reportCategory, setReportCategory] = useState(null);
   const [reportDetails, setReportDetails] = useState('');
   const [reportImage, setReportImage] = useState(null);
   const [isSubmittingReport, setIsSubmittingReport] = useState(false);
-  // END: MODIFIED CODE
+  const [showReportSuccess, setShowReportSuccess] = useState(false); // New state for report success screen
+  
 
   const PREDEFINED_REASONS = [
     'Changed my mind',
@@ -104,9 +105,9 @@ const OrderTrackingScreen = ({ route, navigation }) => {
     'Wrong item selected',
   ];
 
-  // START: MODIFIED CODE
+  
   const REPORT_CATEGORIES = ['Complaint', 'Damage', 'Refund'];
-  // END: MODIFIED CODE
+  
 
   const colors = {
     background: isDarkMode ? '#1a1a2e' : '#F7E9E9',
@@ -281,8 +282,6 @@ const OrderTrackingScreen = ({ route, navigation }) => {
 
     setIsCancelling(true);
     const orderDocRef = doc(db, 'orders', orderId);
-    
-    // Get a reference to the notifications collection
     const notificationsCollectionRef = collection(db, 'notifications');
 
     try {
@@ -292,7 +291,6 @@ const OrderTrackingScreen = ({ route, navigation }) => {
             cancelledAt: serverTimestamp(),
         });
         
-        // Create a notification document for the admin
         await addDoc(notificationsCollectionRef, {
             type: 'ORDER_CANCELLED',
             message: `Order #${orderId.substring(0, 6).toUpperCase()} was cancelled. Reason: ${finalReason}`,
@@ -301,10 +299,7 @@ const OrderTrackingScreen = ({ route, navigation }) => {
             status: 'unread',
         });
 
-        Alert.alert("Order Cancelled", "Your order has been successfully cancelled.");
-        setIsCancelModalVisible(false);
-        setSelectedCancelReason(null);
-        setCustomCancelReason('');
+        setShowCancellationSuccess(true);
 
     } catch (error) {
         console.error("Error cancelling order: ", error);
@@ -314,20 +309,24 @@ const OrderTrackingScreen = ({ route, navigation }) => {
     }
   };
 
-  // START: MODIFIED CODE
+  const resetAndCloseCancelModal = () => {
+    setIsCancelModalVisible(false);
+    setTimeout(() => {
+        setSelectedCancelReason(null);
+        setCustomCancelReason('');
+        setShowCancellationSuccess(false);
+    }, 300);
+  };
+  
   const handleReportSubmit = async () => {
-    if (!reportCategory) {
-      Alert.alert("Category Required", "Please select a category for your report.");
+    if (!reportCategory || reportDetails.trim() === '' || !reportImage) {
+      Alert.alert("Incomplete Form", "Please select a category, fill in the details, and attach a photo to proceed.");
       return;
     }
-    if (reportDetails.trim() === '') {
-      Alert.alert("Details Required", "Please describe the issue in detail.");
-      return;
-    }
+    
     setIsSubmittingReport(true);
 
     let imageUrl = null;
-    // Image upload logic (reused from other submit handlers)
     if (reportImage && reportImage.base64) {
       const CLOUDINARY_CLOUD_NAME = "djhtu0rzz";
       const CLOUDINARY_UPLOAD_PRESET = "my_app_preset";
@@ -351,12 +350,10 @@ const OrderTrackingScreen = ({ route, navigation }) => {
       }
     }
     
-    // Firestore submission logic
     const reportsCollectionRef = collection(db, 'reports');
     const orderDocRef = doc(db, 'orders', orderId);
 
     try {
-      // Add to 'reports' collection
       await addDoc(reportsCollectionRef, {
         orderId: order.id,
         category: reportCategory,
@@ -365,24 +362,18 @@ const OrderTrackingScreen = ({ route, navigation }) => {
         createdAt: serverTimestamp(),
         customerName: order?.customerName || 'Anonymous',
         customerEmail: order?.customerEmail || 'N/A',
-        status: 'new', // For admin tracking
+        status: 'new',
       });
 
-      // Update the order to show a report was filed
       await updateDoc(orderDocRef, {
         reportInfo: {
             category: reportCategory,
             submittedAt: serverTimestamp(),
         }
       });
-
-      Alert.alert("Report Submitted", "Your report has been sent to the admin team. We will get back to you shortly.");
       
-      // Reset state and close modal
-      setIsReportModalVisible(false);
-      setReportCategory(null);
-      setReportDetails('');
-      setReportImage(null);
+      // Show the success screen instead of an alert
+      setShowReportSuccess(true);
 
     } catch (error) {
       console.error("Error submitting report: ", error);
@@ -391,7 +382,17 @@ const OrderTrackingScreen = ({ route, navigation }) => {
       setIsSubmittingReport(false);
     }
   };
-  // END: MODIFIED CODE
+  
+  // Helper function to reset and close the report modal
+  const resetAndCloseReportModal = () => {
+    setIsReportModalVisible(false);
+    setTimeout(() => {
+      setShowReportSuccess(false);
+      setReportCategory(null);
+      setReportDetails('');
+      setReportImage(null);
+    }, 300);
+  };
 
   if (loading) return (<SafeAreaView style={[styles.safeArea, styles.centerScreen]}><ActivityIndicator size="large" color={colors.primary} /></SafeAreaView>);
   if (error || !order) return (<SafeAreaView style={[styles.safeArea, styles.centerScreen]}><Icon name="alert-circle-outline" size={50} color={colors.primary} /><Text style={{ color: colors.text, marginTop: 10 }}>{error || "Could not find order details."}</Text></SafeAreaView>);
@@ -472,162 +473,198 @@ const OrderTrackingScreen = ({ route, navigation }) => {
         animationType="fade"
         transparent={true}
         visible={isCancelModalVisible}
-        onRequestClose={() => setIsCancelModalVisible(false)}
+        onRequestClose={resetAndCloseCancelModal}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Cancel Order</Text>
-            <Text style={styles.modalSubtitle}>
-              Are you sure? This action cannot be undone. Please select a reason below.
-            </Text>
-            
-            <View style={styles.reasonContainer}>
-              {PREDEFINED_REASONS.map((reason) => (
-                <TouchableOpacity
-                  key={reason}
-                  style={[
-                    styles.reasonButton,
-                    selectedCancelReason === reason && styles.selectedReasonButton,
-                  ]}
-                  onPress={() => setSelectedCancelReason(reason)}
-                >
-                  <Text style={[
-                    styles.reasonButtonText,
-                    selectedCancelReason === reason && styles.selectedReasonButtonText
-                  ]}>
-                    {reason}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-              <TouchableOpacity
-                style={[
-                  styles.reasonButton,
-                  selectedCancelReason === 'Other' && styles.selectedReasonButton,
-                ]}
-                onPress={() => setSelectedCancelReason('Other')}
-              >
-                <Text style={[
-                  styles.reasonButtonText,
-                  selectedCancelReason === 'Other' && styles.selectedReasonButtonText
-                ]}>
-                  Other...
+            {showCancellationSuccess ? (
+              <>
+                <View style={styles.successIconContainer}>
+                   <Icon name="check-circle-outline" size={60} color={'#4CAF50'} />
+                </View>
+                <Text style={styles.modalTitle}>Order Cancelled</Text>
+                <Text style={styles.modalSubtitle}>
+                    Your order has been successfully cancelled.
                 </Text>
-              </TouchableOpacity>
-            </View>
+                <TouchableOpacity 
+                  style={styles.successOkButton} 
+                  onPress={resetAndCloseCancelModal}
+                >
+                  <Text style={styles.submitButtonText}>OK</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <Text style={styles.modalTitle}>Cancel Order</Text>
+                <Text style={styles.modalSubtitle}>
+                  Are you sure? This action cannot be undone. Please select a reason below.
+                </Text>
+                
+                <View style={styles.reasonContainer}>
+                  {PREDEFINED_REASONS.map((reason) => (
+                    <TouchableOpacity
+                      key={reason}
+                      style={[
+                        styles.reasonButton,
+                        selectedCancelReason === reason && styles.selectedReasonButton,
+                      ]}
+                      onPress={() => setSelectedCancelReason(reason)}
+                    >
+                      <Text style={[
+                        styles.reasonButtonText,
+                        selectedCancelReason === reason && styles.selectedReasonButtonText
+                      ]}>
+                        {reason}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                  <TouchableOpacity
+                    style={[
+                      styles.reasonButton,
+                      selectedCancelReason === 'Other' && styles.selectedReasonButton,
+                    ]}
+                    onPress={() => setSelectedCancelReason('Other')}
+                  >
+                    <Text style={[
+                      styles.reasonButtonText,
+                      selectedCancelReason === 'Other' && styles.selectedReasonButtonText
+                    ]}>
+                      Other...
+                    </Text>
+                  </TouchableOpacity>
+                </View>
 
-            {selectedCancelReason === 'Other' && (
-              <TextInput
-                style={[styles.modalInput, { marginTop: 10 }]}
-                placeholder="Please specify your reason..."
-                placeholderTextColor={colors.subText}
-                value={customCancelReason}
-                onChangeText={setCustomCancelReason}
-                multiline
-              />
+                {selectedCancelReason === 'Other' && (
+                  <TextInput
+                    style={[styles.modalInput, { marginTop: 10 }]}
+                    placeholder="Please specify your reason..."
+                    placeholderTextColor={colors.subText}
+                    value={customCancelReason}
+                    onChangeText={setCustomCancelReason}
+                    multiline
+                  />
+                )}
+
+                <View style={styles.modalButtonContainer}>
+                  <TouchableOpacity style={styles.modalCancelButton} onPress={resetAndCloseCancelModal}>
+                    <Text style={styles.modalCancelButtonText}>Go Back</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={[styles.modalSubmitButton, { backgroundColor: colors.danger }]} 
+                    onPress={handleCancelOrder}
+                    disabled={isCancelling}
+                  >
+                    {isCancelling ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitButtonText}>Confirm Cancel</Text>}
+                  </TouchableOpacity>
+                </View>
+              </>
             )}
-
-            <View style={styles.modalButtonContainer}>
-              <TouchableOpacity style={styles.modalCancelButton} onPress={() => {
-                setIsCancelModalVisible(false);
-                setSelectedCancelReason(null);
-                setCustomCancelReason('');
-              }}>
-                <Text style={styles.modalCancelButtonText}>Go Back</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.modalSubmitButton, { backgroundColor: colors.danger }]} 
-                onPress={handleCancelOrder}
-                disabled={isCancelling}
-              >
-                {isCancelling ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitButtonText}>Confirm Cancel</Text>}
-              </TouchableOpacity>
-            </View>
           </View>
         </View>
       </Modal>
 
-      {/* START: MODIFIED CODE */}
+      
       {/* Report Issue Modal */}
       <Modal
         animationType="fade"
         transparent={true}
         visible={isReportModalVisible}
-        onRequestClose={() => setIsReportModalVisible(false)}
+        onRequestClose={resetAndCloseReportModal}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Report an Issue</Text>
-            <Text style={styles.modalSubtitle}>
-              Please select a category and describe the issue with your order.
-            </Text>
-            
-            <View style={styles.reasonContainer}>
-              {REPORT_CATEGORIES.map((category) => (
-                <TouchableOpacity
-                  key={category}
-                  style={[
-                    styles.reasonButton,
-                    reportCategory === category && styles.selectedReasonButton,
-                  ]}
-                  onPress={() => setReportCategory(category)}
+            {showReportSuccess ? (
+              // Success Screen for Report
+              <>
+                <View style={styles.successIconContainer}>
+                   <Icon name="check-circle-outline" size={60} color={'#4CAF50'} />
+                </View>
+                <Text style={styles.modalTitle}>Report Submitted</Text>
+                <Text style={styles.modalSubtitle}>
+                  Your report has been sent to the admin team. We will get back to you shortly.
+                </Text>
+                <TouchableOpacity 
+                  style={styles.successOkButton} 
+                  onPress={resetAndCloseReportModal}
                 >
-                  <Text style={[
-                    styles.reasonButtonText,
-                    reportCategory === category && styles.selectedReasonButtonText
-                  ]}>
-                    {category}
-                  </Text>
+                  <Text style={styles.submitButtonText}>OK</Text>
                 </TouchableOpacity>
-              ))}
-            </View>
-            
-            <TextInput
-                style={styles.modalInput}
-                placeholder="Please describe the issue in detail..."
-                placeholderTextColor={colors.subText}
-                value={reportDetails}
-                onChangeText={setReportDetails}
-                multiline
-            />
+              </>
+            ) : (
+              // Report Form
+              <>
+                <Text style={styles.modalTitle}>Report an Issue</Text>
+                <Text style={styles.modalSubtitle}>
+                  Please select a category and describe the issue with your order.
+                </Text>
+                
+                <View style={styles.reasonContainer}>
+                  {REPORT_CATEGORIES.map((category) => (
+                    <TouchableOpacity
+                      key={category}
+                      style={[
+                        styles.reasonButton,
+                        reportCategory === category && styles.selectedReasonButton,
+                      ]}
+                      onPress={() => setReportCategory(category)}
+                    >
+                      <Text style={[
+                        styles.reasonButtonText,
+                        reportCategory === category && styles.selectedReasonButtonText
+                      ]}>
+                        {category}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                
+                <TextInput
+                    style={styles.modalInput}
+                    placeholder="Please describe the issue in detail..."
+                    placeholderTextColor={colors.subText}
+                    value={reportDetails}
+                    onChangeText={setReportDetails}
+                    multiline
+                />
 
-            <TouchableOpacity 
-              style={styles.imagePickerButton} 
-              onPress={() => handleImagePick(setReportImage)}
-            >
-              <Icon name="camera-plus-outline" size={22} color={colors.primary} />
-              <Text style={styles.imagePickerText}>{reportImage ? 'Change Photo' : 'Add Photo (Optional)'}</Text>
-            </TouchableOpacity>
-            {reportImage ? (
-              <Image source={{ uri: reportImage.uri }} style={styles.generalFeedbackImagePreview} />
-            ) : null}
+                <TouchableOpacity 
+                  style={styles.imagePickerButton} 
+                  onPress={() => handleImagePick(setReportImage)}
+                >
+                  <Icon name="camera-plus-outline" size={22} color={colors.primary} />
+                  <Text style={styles.imagePickerText}>{reportImage ? 'Change Photo' : 'Add Photo'}</Text>
+                </TouchableOpacity>
+                {reportImage ? (
+                  <Image source={{ uri: reportImage.uri }} style={styles.generalFeedbackImagePreview} />
+                ) : null}
 
-            <View style={styles.modalButtonContainer}>
-              <TouchableOpacity style={styles.modalCancelButton} onPress={() => {
-                setIsReportModalVisible(false);
-                setReportCategory(null);
-                setReportDetails('');
-                setReportImage(null);
-              }}>
-                <Text style={styles.modalCancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.modalSubmitButton} 
-                onPress={handleReportSubmit}
-                disabled={isSubmittingReport}
-              >
-                {isSubmittingReport ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitButtonText}>Submit Report</Text>}
-              </TouchableOpacity>
-            </View>
+                <View style={styles.modalButtonContainer}>
+                  <TouchableOpacity style={styles.modalCancelButton} onPress={resetAndCloseReportModal}>
+                    <Text style={styles.modalCancelButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={[
+                      styles.modalSubmitButton,
+                      (!reportCategory || reportDetails.trim() === '' || !reportImage) && styles.disabledButton 
+                    ]} 
+                    onPress={handleReportSubmit}
+                    disabled={!reportCategory || reportDetails.trim() === '' || !reportImage || isSubmittingReport}
+                  >
+                    {isSubmittingReport ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitButtonText}>Submit Report</Text>}
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
           </View>
         </View>
       </Modal>
-      {/* END: MODIFIED CODE */}
+      
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.card}>
           <View style={styles.orderSummaryHeader}>
             <Text style={styles.cardTitle}>Order ID: #{order.id.substring(0, 8).toUpperCase()}</Text>
-            {/* START: MODIFIED CODE */}
+            
             <View style={styles.headerActions}>
               {isCancellable() && (
                 <TouchableOpacity onPress={() => setIsCancelModalVisible(true)} style={styles.cancelButton}>
@@ -641,9 +678,9 @@ const OrderTrackingScreen = ({ route, navigation }) => {
                 </TouchableOpacity>
               )}
             </View>
-            {/* END: MODIFIED CODE */}
+            
           </View>
-           {/* START: MODIFIED CODE */}
+           
            {order.reportInfo && (
             <View style={styles.reportInfoBadge}>
                 <Icon name="information" size={16} color={colors.primary} />
@@ -652,7 +689,7 @@ const OrderTrackingScreen = ({ route, navigation }) => {
                 </Text>
             </View>
           )}
-          {/* END: MODIFIED CODE */}
+          
           <View style={[
               styles.statusBadge, 
               { backgroundColor: order.status === 'Cancelled' ? colors.danger : colors.primary }
@@ -738,7 +775,7 @@ const getStyles = (colors) => StyleSheet.create({
     header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.card },
     backButton: { position: 'absolute', left: 20 },
     headerTitle: { fontSize: 20, fontWeight: '600', color: colors.text },
-    // START: MODIFIED CODE
+    
     headerActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
     reportButton: {
         flexDirection: 'row',
@@ -769,7 +806,7 @@ const getStyles = (colors) => StyleSheet.create({
         marginLeft: 8,
         flex: 1,
     },
-    // END: MODIFIED CODE
+    
     scrollContent: { padding: 15 },
     card: { backgroundColor: colors.card, borderRadius: 12, padding: 20, marginBottom: 15 },
     orderSummaryHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
@@ -828,15 +865,16 @@ const getStyles = (colors) => StyleSheet.create({
       resizeMode: 'cover',
     },
 
-    // New styles for cancellation
     cancelButton: {
-        backgroundColor: colors.danger,
+        backgroundColor: 'transparent',
         paddingHorizontal: 12,
         paddingVertical: 6,
         borderRadius: 20,
+        borderWidth: 1,
+        borderColor: colors.danger,
     },
     cancelButtonText: {
-        color: '#fff',
+        color: colors.danger,
         fontWeight: 'bold',
         fontSize: 12,
     },
@@ -879,6 +917,21 @@ const getStyles = (colors) => StyleSheet.create({
     selectedReasonButtonText: {
         color: '#fff',
         fontWeight: 'bold',
+    },
+    
+    successIconContainer: {
+      marginBottom: 15,
+    },
+    successOkButton: {
+      width: '100%',
+      backgroundColor: colors.primary,
+      borderRadius: 25,
+      paddingVertical: 12,
+      alignItems: 'center',
+      marginTop: 20,
+    },
+    disabledButton: {
+      backgroundColor: '#ccc',
     },
 });
 
