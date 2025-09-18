@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { auth } from '../Backend/firebaseConfig';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -38,28 +39,63 @@ const Stack = createNativeStackNavigator();
 export default function StackNavigator() {
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [hasOnboardedThisSession, setHasOnboardedThisSession] = useState(false);
-  // --- NEW STATE ---
-  // This state tracks if the user has just logged out to change the initial screen.
+  const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(false);
   const [didLogout, setDidLogout] = useState(false);
+
+  // Load onboarding status from AsyncStorage
+  const loadOnboardingStatus = async () => {
+    try {
+      const hasOnboarded = await AsyncStorage.getItem('hasCompletedOnboarding');
+      console.log('🔍 DEBUG: Loaded onboarding status:', hasOnboarded);
+      console.log('🔍 DEBUG: Will show onboarding?', hasOnboarded !== 'true');
+      setHasCompletedOnboarding(hasOnboarded === 'true');
+    } catch (error) {
+      console.error('Error loading onboarding status:', error);
+      setHasCompletedOnboarding(false);
+    }
+  };
+
+  // Save onboarding completion to AsyncStorage
+  const completeOnboarding = async () => {
+    try {
+      console.log('🟢 DEBUG: Saving onboarding completion...');
+      await AsyncStorage.setItem('hasCompletedOnboarding', 'true');
+      setHasCompletedOnboarding(true);
+      console.log('🟢 DEBUG: Onboarding marked as complete!');
+    } catch (error) {
+      console.error('Error saving onboarding status:', error);
+    }
+  };
+
+  useEffect(() => {
+    loadOnboardingStatus();
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      // --- MODIFIED LOGIC ---
-      // If a user was logged in and is now logged out, set the didLogout flag.
+      console.log('🔐 DEBUG: Auth state changed. Current user:', currentUser ? 'logged in' : 'logged out');
+      
+      // If a user was logged in and is now logged out, set the didLogout flag
       if (user && !currentUser) {
+        console.log('🔴 DEBUG: User logged out, setting didLogout flag');
         setDidLogout(true);
       } 
-      // If a user logs in, reset the flag.
+      // If a user logs in, reset the flag and mark onboarding as complete
       else if (!user && currentUser) {
+        console.log('🟢 DEBUG: User logged in, resetting logout flag');
         setDidLogout(false);
+        // When user successfully logs in, mark onboarding as completed
+        if (!hasCompletedOnboarding) {
+          console.log('🎯 DEBUG: User logged in but hasnt completed onboarding, marking as complete');
+          completeOnboarding();
+        }
       }
       setUser(currentUser);
       setIsLoading(false);
     });
-    // We add 'user' to the dependency array to check the previous state against the new one.
+
     return unsubscribe;
-  }, [user]);
+  }, [user, hasCompletedOnboarding]);
 
   if (isLoading) {
     return (
@@ -100,29 +136,28 @@ export default function StackNavigator() {
             <Stack.Screen
               name="Verification"
               component={VerificationScreen}
-              initialParams={{ email: user.email || '...' }} // Pass email safely
+              initialParams={{ email: user.email || '...' }}
             />
           )
         ) : (
-          // User is logged out, show auth flow
-          !hasOnboardedThisSession ? (
-            // Onboarding flow for the very first time
+          // User is logged out
+          !hasCompletedOnboarding ? (
+            // Show onboarding flow for users who haven't completed it
             <>
               <Stack.Screen name="Splash" component={SplashScreen} />
               <Stack.Screen name="Onboarding">
                 {(props) => (
                   <OnboardingScreen
                     {...props}
-                    onComplete={() => setHasOnboardedThisSession(true)}
+                    onComplete={completeOnboarding}
                   />
                 )}
               </Stack.Screen>
             </>
           ) : (
-            // --- MODIFIED LOGIC ---
-            // After onboarding, we check if the user just logged out.
-            // If they did, Login is the first screen. Otherwise, Welcome is the first.
+            // User has completed onboarding, show auth screens
             didLogout ? (
+              // User just logged out, show Login first
               <>
                 <Stack.Screen name="Login" component={LoginScreen} />
                 <Stack.Screen name="Welcome" component={WelcomeScreen} />
@@ -130,6 +165,7 @@ export default function StackNavigator() {
                 <Stack.Screen name="Verification" component={VerificationScreen} />
               </>
             ) : (
+              // Normal flow, show Welcome first
               <>
                 <Stack.Screen name="Welcome" component={WelcomeScreen} />
                 <Stack.Screen name="Login" component={LoginScreen} />
@@ -152,4 +188,3 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF0F5',
   },
 });
-

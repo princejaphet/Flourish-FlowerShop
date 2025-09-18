@@ -76,6 +76,7 @@ const OrderTrackingScreen = ({ route, navigation }) => {
   const [feedback, setFeedback] = useState('');
   const [feedbackImage, setFeedbackImage] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showFeedbackSuccess, setShowFeedbackSuccess] = useState(false); // New state for feedback success modal
 
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [generalFeedback, setGeneralFeedback] = useState('');
@@ -95,7 +96,7 @@ const OrderTrackingScreen = ({ route, navigation }) => {
   const [reportDetails, setReportDetails] = useState('');
   const [reportImage, setReportImage] = useState(null);
   const [isSubmittingReport, setIsSubmittingReport] = useState(false);
-  const [showReportSuccess, setShowReportSuccess] = useState(false); // New state for report success screen
+  const [showReportSuccess, setShowReportSuccess] = useState(false); 
   
 
   const PREDEFINED_REASONS = [
@@ -197,7 +198,7 @@ const OrderTrackingScreen = ({ route, navigation }) => {
       const feedbackData = { rating, text: feedback.trim(), imageUrl, createdAt: serverTimestamp(), orderId: order.id, customerName: order.customerName || 'Anonymous', customerEmail: order.customerEmail || '', productName: order.product?.name || 'N/A', productImageUrl: order.product?.imageUrl || '', status: 'new', adminReply: null };
       await addDoc(feedbackCollectionRef, feedbackData);
       await updateDoc(orderDocRef, { feedback: { rating: feedbackData.rating, text: feedbackData.text, imageUrl: feedbackData.imageUrl, submittedAt: new Date() } });
-      Alert.alert("Feedback Submitted", "Thank you for your review!");
+      setShowFeedbackSuccess(true); // Show the success modal instead of an alert
     } catch (error) {
       console.error("Error submitting feedback: ", error);
       Alert.alert("Error", "Could not submit your feedback.");
@@ -467,6 +468,33 @@ const OrderTrackingScreen = ({ route, navigation }) => {
           </View>
         </View>
       </Modal>
+
+      {/* NEW: Feedback Success Modal */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={showFeedbackSuccess}
+        onRequestClose={() => setShowFeedbackSuccess(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.successIconContainer}>
+               <Icon name="check-circle-outline" size={60} color={'#4CAF50'} />
+            </View>
+            <Text style={styles.modalTitle}>Feedback Submitted</Text>
+            <Text style={styles.modalSubtitle}>
+                Thank you for your review!
+            </Text>
+            <TouchableOpacity 
+              style={styles.successOkButton} 
+              onPress={() => setShowFeedbackSuccess(false)}
+            >
+              <Text style={styles.submitButtonText}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
 
       {/* Cancellation Modal */}
       <Modal
