@@ -226,7 +226,7 @@ const SettingsPage = () => {
   };
 
   const settingsTabs = [
-    { id: 'general', name: 'General', icon: Settings },
+    
     { id: 'profile', name: 'Profile', icon: User },
     { id: 'business', name: 'Business', icon: Store },
     { id: 'notifications', name: 'Notifications', icon: Bell },

@@ -14,6 +14,8 @@ import {
   Alert,
   ActivityIndicator,
   Image,
+  KeyboardAvoidingView, // <-- IMPORTED
+  Platform, // <-- IMPORTED
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useTheme } from '../context/ThemeContext';
@@ -210,54 +212,65 @@ const SettingsScreen = ({ navigation }) => {
         visible={isModalVisible}
         onRequestClose={() => setIsModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>General Feedback</Text>
-            <Text style={styles.modalSubtitle}>
-              Have suggestions or comments about our service or app? Let us know!
-            </Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Tell us what you think..."
-              placeholderTextColor={colors.subText}
-              value={generalFeedback}
-              onChangeText={setGeneralFeedback}
-              multiline
-            />
-            
-            <TouchableOpacity 
-              style={styles.imagePickerButton} 
-              onPress={handleImagePick}
-            >
-              <Icon name="camera-plus-outline" size={22} color={colors.primary} />
-              <Text style={styles.imagePickerText}>{generalFeedbackImage ? 'Change Photo' : 'Add Photo'}</Text>
-            </TouchableOpacity>
-            {generalFeedbackImage ? (
-              <Image source={{ uri: generalFeedbackImage.uri }} style={styles.generalFeedbackImagePreview} />
-            ) : null}
+        {/* WRAPPED in KeyboardAvoidingView to prevent keyboard from covering the modal */}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.keyboardAvoidingView}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>General Feedback</Text>
+              <Text style={styles.modalSubtitle}>
+                Have suggestions or comments about our service or app? Let us know!
+              </Text>
 
-            <View style={styles.modalButtonContainer}>
-              <TouchableOpacity style={styles.modalCancelButton} onPress={() => {
-                setIsModalVisible(false);
-                setGeneralFeedback('');
-                setGeneralFeedbackImage(null);
-              }}>
-                <Text style={styles.modalCancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.modalSubmitButton} 
-                onPress={handleGeneralFeedbackSubmit}
-                disabled={isGeneralFeedbackSubmitting}
-              >
-                {isGeneralFeedbackSubmitting ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.submitButtonText}>Submit</Text>
-                )}
-              </TouchableOpacity>
+              {/* ADDED ScrollView to make the form content scrollable */}
+              <ScrollView showsVerticalScrollIndicator={false}>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="Tell us what you think..."
+                  placeholderTextColor={colors.subText}
+                  value={generalFeedback}
+                  onChangeText={setGeneralFeedback}
+                  multiline
+                />
+                
+                <TouchableOpacity 
+                  style={styles.imagePickerButton} 
+                  onPress={handleImagePick}
+                >
+                  <Icon name="camera-plus-outline" size={22} color={colors.primary} />
+                  <Text style={styles.imagePickerText}>{generalFeedbackImage ? 'Change Photo' : 'Add Photo'}</Text>
+                </TouchableOpacity>
+
+                {generalFeedbackImage ? (
+                  <Image source={{ uri: generalFeedbackImage.uri }} style={styles.generalFeedbackImagePreview} />
+                ) : null}
+
+                <View style={styles.modalButtonContainer}>
+                  <TouchableOpacity style={styles.modalCancelButton} onPress={() => {
+                    setIsModalVisible(false);
+                    setGeneralFeedback('');
+                    setGeneralFeedbackImage(null);
+                  }}>
+                    <Text style={styles.modalCancelButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={styles.modalSubmitButton} 
+                    onPress={handleGeneralFeedbackSubmit}
+                    disabled={isGeneralFeedbackSubmitting}
+                  >
+                    {isGeneralFeedbackSubmitting ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <Text style={styles.submitButtonText}>Submit</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <ScrollView contentContainerStyle={styles.container}>
@@ -323,8 +336,6 @@ const getStyles = (isDarkMode, theme) => StyleSheet.create({
     backgroundColor: isDarkMode ? '#1a1a2e' : '#F7E9E9',
   },
   container: {
-    flex: 1,
-    backgroundColor: isDarkMode ? '#1a1a2e' : '#F7E9E9',
     padding: 20,
   },
   title: {
@@ -350,7 +361,7 @@ const getStyles = (isDarkMode, theme) => StyleSheet.create({
     alignItems: 'center',
     padding: 15,
     borderRadius: 10,
-    marginBottom: 1,
+    marginBottom: 12,
     shadowColor: theme.colors.shadow,
     shadowOffset: {
       width: 0,
@@ -380,6 +391,9 @@ const getStyles = (isDarkMode, theme) => StyleSheet.create({
   },
 
   // Modal styles
+  keyboardAvoidingView: { // <-- ADDED
+    flex: 1,
+  },
   modalOverlay: { 
     flex: 1, 
     justifyContent: 'center', 
@@ -404,7 +418,8 @@ const getStyles = (isDarkMode, theme) => StyleSheet.create({
   modalTitle: { 
     fontSize: 22, 
     fontWeight: 'bold', 
-    color: isDarkMode ? '#fff' : '#333', 
+    color: isDarkMode ? '#fff' : '#333',
+    textAlign: 'center',
   },
   modalSubtitle: { 
     fontSize: 14, 
@@ -487,10 +502,11 @@ const getStyles = (isDarkMode, theme) => StyleSheet.create({
     borderColor: isDarkMode ? '#444' : '#E0E0E0',
     fontSize: 16,
     lineHeight: 22,
+    marginBottom: 16, // <-- ADDED space below input
   },
   modalButtonContainer: { 
     flexDirection: 'row', 
-    marginTop: 24, 
+    marginTop: 12, // <-- REDUCED margin top to balance layout
     gap: 12,
   },
   modalSubmitButton: { 

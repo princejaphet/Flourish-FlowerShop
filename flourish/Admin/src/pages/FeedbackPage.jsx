@@ -441,7 +441,7 @@ export default function FeedbackPage() {
       <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <StatCard title="Total Order Reviews" value={loading ? '...' : stats.totalReviews} icon={<MessageCircleQuestion className="text-red-500" />} />
         <StatCard title="Average Rating" value={loading ? '...' : stats.averageRating.toFixed(1)} icon={<StarHalf className="text-yellow-500" />} />
-        <StatCard title="User Reports" value={loading ? '...' : reportsList.length} icon={<AlertCircle className="text-orange-500" />}>
+        <StatCard title="Item Reports" value={loading ? '...' : reportsList.length} icon={<AlertCircle className="text-orange-500" />}>
            <div className="mt-4 text-xs text-slate-500">
             {reportsList.filter(r => r.status === 'new').length} reports pending reply.
            </div>
@@ -459,7 +459,7 @@ export default function FeedbackPage() {
             All Feedback
           </button>
           <button onClick={() => setActiveView('reports')} className={`px-4 py-2 text-sm font-semibold transition-colors flex items-center gap-2 ${activeView === 'reports' ? 'border-b-2 border-red-600 text-red-600' : 'text-slate-500 hover:text-slate-800'}`}>
-            <AlertCircle size={14} /> User Reports
+            <AlertCircle size={14} /> Item Reports
           </button>
         </div>
 

@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "MyBlankApp",
-    "slug": "MyBlankApp",
+    "name": "FlourishPH",
+    "slug": "FlourishPH",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/flourish.png",
+    "icon": "./assets/icons.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
@@ -20,10 +20,16 @@
         "foregroundImage": "./assets/flourish.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.flourish"
     },
     "web": {
       "favicon": "./assets/flourish.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "2f4e1e77-54f3-4fe6-833b-c551eb41b977"
+      }
     }
   }
 }

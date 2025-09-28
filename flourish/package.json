@@ -1,5 +1,5 @@
 {
-  "name": "myblankapp",
+  "name": "flourish",
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
@@ -9,7 +9,7 @@
     "web": "expo start --web"
   },
   "dependencies": {
-    "@expo/metro-runtime": "~6.1.1",
+    "@expo/metro-runtime": "~6.1.2",
     "@expo/vector-icons": "^15.0.2",
     "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-native-community/checkbox": "^0.5.20",
@@ -24,7 +24,7 @@
     "@react-navigation/stack": "^7.4.5",
     "@tailwindcss/postcss": "^4.1.11",
     "date-fns": "^2.30.0",
-    "expo": "^54.0.0",
+    "expo": "~54.0.10",
     "expo-av": "~16.0.7",
     "expo-checkbox": "~5.0.7",
     "expo-image-picker": "~17.0.8",
@@ -46,7 +46,7 @@
     "react-native-linear-gradient": "^2.8.3",
     "react-native-phone-number-input": "^2.1.0",
     "react-native-picker-select": "^9.3.1",
-    "react-native-reanimated": "~4.1.0",
+    "react-native-reanimated": "~4.1.1",
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.16.0",
     "react-native-svg": "^15.12.1",
