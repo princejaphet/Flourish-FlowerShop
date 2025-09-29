@@ -1,6 +1,6 @@
 // screens/SettingsScreen.js
 
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext } from 'react'; // <-- CORRECTED IMPORT
 import {
   View,
   Text,
@@ -14,8 +14,8 @@ import {
   Alert,
   ActivityIndicator,
   Image,
-  KeyboardAvoidingView, // <-- IMPORTED
-  Platform, // <-- IMPORTED
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useTheme } from '../context/ThemeContext';
@@ -23,7 +23,6 @@ import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '../Backend/firebaseConfig';
 import * as ImagePicker from 'expo-image-picker';
 
-// (translations object remains the same)
 const translations = {
   en: {
     settingsTitle: 'Settings',
@@ -69,6 +68,13 @@ const SettingsScreen = ({ navigation }) => {
   const [isGeneralFeedbackSubmitting, setIsGeneralFeedbackSubmitting] = useState(false);
   const [feedbackCategory, setFeedbackCategory] = useState('');
   const [appRating, setAppRating] = useState(0);
+  
+  // --- ADDED FOR SUPPORT FORM START ---
+  const [isSupportModalVisible, setIsSupportModalVisible] = useState(false);
+  const [supportSubject, setSupportSubject] = useState('');
+  const [supportMessage, setSupportMessage] = useState('');
+  const [isSupportSubmitting, setIsSupportSubmitting] = useState(false);
+  // --- ADDED FOR SUPPORT FORM END ---
 
   const FEEDBACK_CATEGORIES = [
     'Bug Report',
@@ -105,11 +111,6 @@ const SettingsScreen = ({ navigation }) => {
   };
 
   const handleGeneralFeedbackSubmit = async () => {
-    if (!feedbackCategory) {
-      Alert.alert("Category Required", "Please select a feedback category.");
-      return;
-    }
-    
     if (generalFeedback.trim() === '' && !generalFeedbackImage) {
       Alert.alert("Feedback Required", "Please enter your feedback or add a photo before submitting.");
       return;
@@ -147,24 +148,22 @@ const SettingsScreen = ({ navigation }) => {
     try {
       await addDoc(collection(db, 'generalFeedback'), {
         text: generalFeedback.trim(),
-        category: feedbackCategory,
+        category: 'General',
         appRating: appRating,
         imageUrl: imageUrl,
         createdAt: serverTimestamp(),
-        customerName: 'Anonymous', // You might want to get actual user data here
-        customerEmail: 'N/A', // You might want to get actual user data here
+        customerName: 'Anonymous',
+        customerEmail: 'N/A',
         status: 'new',
         adminReply: null,
         deviceInfo: {
-          platform: 'mobile', // You can get more specific device info if needed
+          platform: 'mobile',
           timestamp: new Date().toISOString(),
         }
       });
       Alert.alert("Thank You!", "Your feedback helps us improve the app experience!");
       setGeneralFeedback('');
       setGeneralFeedbackImage(null);
-      setFeedbackCategory('');
-      setAppRating(0);
       setIsModalVisible(false);
     } catch (error) {
       console.error("Error submitting general feedback: ", error);
@@ -173,8 +172,35 @@ const SettingsScreen = ({ navigation }) => {
       setIsGeneralFeedbackSubmitting(false);
     }
   };
+  
+  // --- ADDED FOR SUPPORT FORM START ---
+  const handleSupportSubmit = async () => {
+    if (supportSubject.trim() === '' || supportMessage.trim() === '') {
+      Alert.alert("All Fields Required", "Please provide a subject and a message for your support request.");
+      return;
+    }
+    setIsSupportSubmitting(true);
+    
+    try {
+      await addDoc(collection(db, 'supportTickets'), {
+        subject: supportSubject.trim(),
+        message: supportMessage.trim(),
+        createdAt: serverTimestamp(),
+        status: 'new',
+      });
+      Alert.alert("Support Request Sent", "Our team will get back to you as soon as possible. Thank you!");
+      setSupportSubject('');
+      setSupportMessage('');
+      setIsSupportModalVisible(false);
+    } catch (error) {
+      console.error("Error submitting support ticket: ", error);
+      Alert.alert("Error", "Could not submit your request. Please try again.");
+    } finally {
+      setIsSupportSubmitting(false);
+    }
+  };
+  // --- ADDED FOR SUPPORT FORM END ---
 
-  // Reusable component for settings sections
   const Section = ({ title, children }) => (
     <View style={styles.section}>
       {title && <Text style={styles.sectionTitle}>{title}</Text>}
@@ -182,19 +208,17 @@ const SettingsScreen = ({ navigation }) => {
     </View>
   );
 
-  // Reusable component for individual setting options
-  const SettingOption = ({ icon, text, value, onPress, hasSwitch, switchValue, onSwitchChange }) => (
+  const SettingOption = ({ icon, text, onPress, hasSwitch, switchValue, onSwitchChange }) => (
     <TouchableOpacity style={styles.option} onPress={onPress} disabled={hasSwitch}>
       <Icon name={icon} size={22} style={styles.optionIcon} />
       <Text style={styles.optionText}>{text}</Text>
       <View style={styles.optionValueContainer}>
-        {value && <Text style={styles.optionValue}>{value}</Text>}
         {hasSwitch ? (
           <Switch
             value={switchValue}
             onValueChange={onSwitchChange}
             trackColor={{ false: '#767577', true: isDarkMode ? '#FF6B81' : '#D81B60' }}
-            thumbColor={isDarkMode ? '#f4f3f4' : '#f4f3f4'}
+            thumbColor={'#f4f3f4'}
           />
         ) : (
           onPress && <Icon name="chevron-right" size={22} style={styles.optionValue} />
@@ -212,7 +236,6 @@ const SettingsScreen = ({ navigation }) => {
         visible={isModalVisible}
         onRequestClose={() => setIsModalVisible(false)}
       >
-        {/* WRAPPED in KeyboardAvoidingView to prevent keyboard from covering the modal */}
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.keyboardAvoidingView}
@@ -221,10 +244,8 @@ const SettingsScreen = ({ navigation }) => {
             <View style={styles.modalContent}>
               <Text style={styles.modalTitle}>General Feedback</Text>
               <Text style={styles.modalSubtitle}>
-                Have suggestions or comments about our service or app? Let us know!
+                Have suggestions or comments? Let us know!
               </Text>
-
-              {/* ADDED ScrollView to make the form content scrollable */}
               <ScrollView showsVerticalScrollIndicator={false}>
                 <TextInput
                   style={styles.modalInput}
@@ -234,25 +255,15 @@ const SettingsScreen = ({ navigation }) => {
                   onChangeText={setGeneralFeedback}
                   multiline
                 />
-                
-                <TouchableOpacity 
-                  style={styles.imagePickerButton} 
-                  onPress={handleImagePick}
-                >
+                <TouchableOpacity style={styles.imagePickerButton} onPress={handleImagePick}>
                   <Icon name="camera-plus-outline" size={22} color={colors.primary} />
                   <Text style={styles.imagePickerText}>{generalFeedbackImage ? 'Change Photo' : 'Add Photo'}</Text>
                 </TouchableOpacity>
-
-                {generalFeedbackImage ? (
+                {generalFeedbackImage && (
                   <Image source={{ uri: generalFeedbackImage.uri }} style={styles.generalFeedbackImagePreview} />
-                ) : null}
-
+                )}
                 <View style={styles.modalButtonContainer}>
-                  <TouchableOpacity style={styles.modalCancelButton} onPress={() => {
-                    setIsModalVisible(false);
-                    setGeneralFeedback('');
-                    setGeneralFeedbackImage(null);
-                  }}>
+                  <TouchableOpacity style={styles.modalCancelButton} onPress={() => setIsModalVisible(false)}>
                     <Text style={styles.modalCancelButtonText}>Cancel</Text>
                   </TouchableOpacity>
                   <TouchableOpacity 
@@ -272,6 +283,62 @@ const SettingsScreen = ({ navigation }) => {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* --- ADDED FOR SUPPORT FORM START --- */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={isSupportModalVisible}
+        onRequestClose={() => setIsSupportModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.keyboardAvoidingView}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Contact Support</Text>
+              <Text style={styles.modalSubtitle}>
+                Tell us about the problem you're experiencing.
+              </Text>
+              <ScrollView showsVerticalScrollIndicator={false}>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="Subject (e.g., Order Issue)"
+                  placeholderTextColor={isDarkMode ? '#bbb' : '#666'}
+                  value={supportSubject}
+                  onChangeText={setSupportSubject}
+                />
+                <TextInput
+                  style={[styles.modalInput, {minHeight: 150}]}
+                  placeholder="Please describe your issue in detail..."
+                  placeholderTextColor={isDarkMode ? '#bbb' : '#666'}
+                  value={supportMessage}
+                  onChangeText={setSupportMessage}
+                  multiline
+                />
+                <View style={styles.modalButtonContainer}>
+                  <TouchableOpacity style={styles.modalCancelButton} onPress={() => setIsSupportModalVisible(false)}>
+                    <Text style={styles.modalCancelButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={styles.modalSubmitButton} 
+                    onPress={handleSupportSubmit}
+                    disabled={isSupportSubmitting}
+                  >
+                    {isSupportSubmitting ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <Text style={styles.submitButtonText}>Send Request</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+      {/* --- ADDED FOR SUPPORT FORM END --- */}
 
       <ScrollView contentContainerStyle={styles.container}>
         <Text style={styles.title}>{translations[language].settingsTitle}</Text>
@@ -316,20 +383,22 @@ const SettingsScreen = ({ navigation }) => {
 
         <Section title={translations[language].helpSupportSection}>
           <SettingOption icon="help-circle-outline" text={translations[language].helpCenterOption} onPress={() => {}} />
-          <SettingOption icon="headset" text={translations[language].contactSupportOption} onPress={() => {}} />
+          <SettingOption 
+            icon="headset" 
+            text={translations[language].contactSupportOption} 
+            onPress={() => setIsSupportModalVisible(true)}
+          />
           <SettingOption 
             icon="message-text-outline" 
             text={translations[language].generalFeedbackOption} 
             onPress={() => setIsModalVisible(true)} 
           />
         </Section>
-
       </ScrollView>
     </SafeAreaView>
   );
 };
 
-// Enhanced getStyles function using theme colors
 const getStyles = (isDarkMode, theme) => StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -389,9 +458,7 @@ const getStyles = (isDarkMode, theme) => StyleSheet.create({
     color: theme.colors.textSecondary,
     marginRight: 5,
   },
-
-  // Modal styles
-  keyboardAvoidingView: { // <-- ADDED
+  keyboardAvoidingView: {
     flex: 1,
   },
   modalOverlay: { 
@@ -408,13 +475,6 @@ const getStyles = (isDarkMode, theme) => StyleSheet.create({
     padding: 24, 
     alignItems: 'stretch' 
   },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
-    gap: 12,
-  },
   modalTitle: { 
     fontSize: 22, 
     fontWeight: 'bold', 
@@ -428,68 +488,6 @@ const getStyles = (isDarkMode, theme) => StyleSheet.create({
     marginBottom: 24,
     lineHeight: 20,
   },
-  
-  // Rating Section
-  ratingSection: {
-    alignItems: 'center',
-    marginBottom: 20,
-    paddingVertical: 16,
-    backgroundColor: isDarkMode ? '#383856' : '#F8F9FA',
-    borderRadius: 12,
-  },
-  sectionLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: isDarkMode ? '#fff' : '#333',
-    marginBottom: 12,
-  },
-  starContainer: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 8,
-  },
-  ratingText: {
-    fontSize: 14,
-    color: '#D81B60',
-    fontWeight: '500',
-  },
-  
-  // Category Section
-  categorySection: {
-    marginBottom: 20,
-  },
-  categoryScrollView: {
-    marginTop: 8,
-  },
-  categoryButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: isDarkMode ? '#444' : '#E0E0E0',
-    backgroundColor: isDarkMode ? '#383856' : '#F8F9FA',
-    marginRight: 8,
-    minWidth: 100,
-  },
-  selectedCategoryButton: {
-    backgroundColor: '#D81B60',
-    borderColor: '#D81B60',
-  },
-  categoryButtonText: {
-    fontSize: 14,
-    color: isDarkMode ? '#bbb' : '#666',
-    textAlign: 'center',
-    fontWeight: '500',
-  },
-  selectedCategoryButtonText: {
-    color: '#fff',
-    fontWeight: '600',
-  },
-  
-  // Feedback Section
-  feedbackSection: {
-    marginBottom: 20,
-  },
   modalInput: { 
     width: '100%', 
     backgroundColor: isDarkMode ? '#383856' : '#F8F9FA', 
@@ -497,16 +495,16 @@ const getStyles = (isDarkMode, theme) => StyleSheet.create({
     borderRadius: 12, 
     padding: 16, 
     textAlignVertical: 'top', 
-    minHeight: 120, 
+    minHeight: 60,
     borderWidth: 1, 
     borderColor: isDarkMode ? '#444' : '#E0E0E0',
     fontSize: 16,
     lineHeight: 22,
-    marginBottom: 16, // <-- ADDED space below input
+    marginBottom: 16,
   },
   modalButtonContainer: { 
     flexDirection: 'row', 
-    marginTop: 12, // <-- REDUCED margin top to balance layout
+    marginTop: 12,
     gap: 12,
   },
   modalSubmitButton: { 
@@ -563,10 +561,6 @@ const getStyles = (isDarkMode, theme) => StyleSheet.create({
     borderRadius: 12,
     marginBottom: 16,
     resizeMode: 'cover',
-  },
-  disabledButton: {
-    backgroundColor: '#cccccc',
-    opacity: 0.6,
   },
 });
 

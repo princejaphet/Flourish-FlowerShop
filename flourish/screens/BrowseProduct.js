@@ -52,7 +52,9 @@ export const auth = getAuth(firebaseApp);
 export const db = getFirestore(firebaseApp);
 
 
-// --- Full-page skeleton loader that matches the BrowseProduct layout ---
+// --- MODIFIED SECTION START ---
+// Updated full-page skeleton loader that matches the BrowseProduct layout
+// The BottomNav skeleton has been removed.
 const BrowseProductSkeleton = ({ isDarkMode }) => {
     const shimmerAnimation = useRef(new Animated.Value(0)).current;
     const styles = getStyles(isDarkMode);
@@ -85,7 +87,7 @@ const BrowseProductSkeleton = ({ isDarkMode }) => {
     );
 
     return (
-        <SafeAreaView style={styles.container}>
+        <View style={{flex: 1}}>
             {/* Header Skeleton */}
             <View style={styles.header}>
                 <View style={styles.headerContent}>
@@ -110,17 +112,10 @@ const BrowseProductSkeleton = ({ isDarkMode }) => {
                     columnWrapperStyle={styles.row}
                 />
             </View>
-            
-            {/* Bottom Nav Skeleton */}
-            <View style={{height: 70, borderTopWidth: 1, borderTopColor: isDarkMode ? '#333' : '#EEE', flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', paddingBottom: 10}}>
-                <SkeletonBlock style={{width: 50, height: 40, borderRadius: 8}}/>
-                <SkeletonBlock style={{width: 50, height: 40, borderRadius: 8}}/>
-                <SkeletonBlock style={{width: 50, height: 40, borderRadius: 8}}/>
-                <SkeletonBlock style={{width: 50, height: 40, borderRadius: 8}}/>
-            </View>
-        </SafeAreaView>
+        </View>
     );
 };
+// --- MODIFIED SECTION END ---
 
 
 const ProductSkeleton = ({ isDarkMode }) => {
@@ -247,7 +242,7 @@ const BrowseProduct = () => {
         const productsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         productsData.sort((a, b) => a.name.localeCompare(b.name));
         setProducts(productsData);
-        setTimeout(() => setLoading(false), 2000); // Simulate loading
+        setTimeout(() => setLoading(false), 1000); // Simulate loading
       }, (err) => { setError("Failed to load products."); setLoading(false); });
       
       return () => {
@@ -408,53 +403,60 @@ const BrowseProduct = () => {
       <Text style={styles.loadingText}>{message}</Text>
     </View>
   );
-
-  if (!isAuthReady || loading) {
-    if (error) return <LoadingErrorDisplay message={error} />;
-    return <BrowseProductSkeleton isDarkMode={isDarkMode} />;
-  }
-
+  
+  // --- MODIFIED SECTION START ---
+  // The main return logic is updated to always show the BottomNav
+  // and conditionally render the skeleton or the content above it.
   return (
     <View style={styles.container}>
       <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} backgroundColor={styles.container.backgroundColor} />
-      <View style={styles.header}>
-        <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>Browse Products</Text>
-          <TouchableOpacity style={styles.filterIconContainer} onPress={() => setIsFilterModalVisible(true)}>
-            <Icon name="filter-variant" size={28} style={styles.primaryText} />
-            {(selectedCategory !== 'All' || priceRange.min > 0 || priceRange.max < 10000 || sortBy !== 'name') && (
-              <View style={styles.filterBadge}><Text style={styles.filterBadgeText}>•</Text></View>
-            )}
-          </TouchableOpacity>
-        </View>
-        <FlatList
-          data={categories}
-          renderItem={({ item }) => (
-            <TouchableOpacity style={[styles.categoryButton, selectedCategory === item && styles.selectedCategoryButton]} onPress={() => setSelectedCategory(item)}>
-              <Text style={[styles.categoryButtonText, selectedCategory === item && styles.selectedCategoryButtonText]}>{item}</Text>
-            </TouchableOpacity>
-          )}
-          keyExtractor={(item) => item}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.categoryList}
-        />
-      </View>
-
-      <FlatList
-        data={filteredProducts}
-        renderItem={renderProductItem}
-        keyExtractor={(item) => item.id}
-        numColumns={2}
-        columnWrapperStyle={styles.row}
-        contentContainerStyle={styles.productList}
-        showsVerticalScrollIndicator={false}
-      />
       
-      {renderFilterModal()}
+      {(!isAuthReady || loading) ? (
+        error ? <LoadingErrorDisplay message={error} /> : <BrowseProductSkeleton isDarkMode={isDarkMode} />
+      ) : (
+        <>
+          <View style={styles.header}>
+            <View style={styles.headerContent}>
+              <Text style={styles.headerTitle}>Browse Products</Text>
+              <TouchableOpacity style={styles.filterIconContainer} onPress={() => setIsFilterModalVisible(true)}>
+                <Icon name="filter-variant" size={28} style={styles.primaryText} />
+                {(selectedCategory !== 'All' || priceRange.min > 0 || priceRange.max < 10000 || sortBy !== 'name') && (
+                  <View style={styles.filterBadge}><Text style={styles.filterBadgeText}>•</Text></View>
+                )}
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={categories}
+              renderItem={({ item }) => (
+                <TouchableOpacity style={[styles.categoryButton, selectedCategory === item && styles.selectedCategoryButton]} onPress={() => setSelectedCategory(item)}>
+                  <Text style={[styles.categoryButtonText, selectedCategory === item && styles.selectedCategoryButtonText]}>{item}</Text>
+                </TouchableOpacity>
+              )}
+              keyExtractor={(item) => item}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.categoryList}
+            />
+          </View>
+
+          <FlatList
+            data={filteredProducts}
+            renderItem={renderProductItem}
+            keyExtractor={(item) => item.id}
+            numColumns={2}
+            columnWrapperStyle={styles.row}
+            contentContainerStyle={styles.productList}
+            showsVerticalScrollIndicator={false}
+          />
+          
+          {renderFilterModal()}
+        </>
+      )}
+      
       <BottomNav activeTab={activeTab} />
     </View>
   );
+  // --- MODIFIED SECTION END ---
 };
 
 const getStyles = (isDarkMode) => StyleSheet.create({

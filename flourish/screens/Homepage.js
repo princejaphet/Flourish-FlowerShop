@@ -74,6 +74,8 @@ const allSpecialOffers = [
     },
 ];
 
+// --- MODIFIED SECTION START ---
+// The outer SafeAreaView was removed so it doesn't conflict with the parent component's SafeAreaView.
 const HomepageSkeleton = ({ isDarkMode }) => {
     const shimmerAnimation = useRef(new Animated.Value(0)).current;
     const styles = getStyles(isDarkMode);
@@ -106,39 +108,38 @@ const HomepageSkeleton = ({ isDarkMode }) => {
     );
 
     return (
-        <SafeAreaView style={styles.safeArea}>
-            <ScrollView style={{ flex: 1 }}>
-                <View style={styles.header}>
-                    <SkeletonBlock style={{ width: 40, height: 40, borderRadius: 20 }} />
-                    <SkeletonBlock style={{ width: 100, height: 30, borderRadius: 8 }} />
-                    <SkeletonBlock style={{ width: 30, height: 30, borderRadius: 8 }} />
+        <ScrollView style={{ flex: 1 }}>
+            <View style={styles.header}>
+                <SkeletonBlock style={{ width: 40, height: 40, borderRadius: 20 }} />
+                <SkeletonBlock style={{ width: 100, height: 30, borderRadius: 8 }} />
+                <SkeletonBlock style={{ width: 30, height: 30, borderRadius: 8 }} />
+            </View>
+            <View style={styles.welcomeContainer}>
+                <SkeletonBlock style={{ width: '70%', height: 30, borderRadius: 8, marginBottom: 10 }} />
+                <SkeletonBlock style={{ width: '90%', height: 20, borderRadius: 8 }} />
+            </View>
+            <View style={styles.offerContainer}>
+                <SkeletonBlock style={{ width: CARD_WIDTH, height: 180, borderRadius: 15 }} />
+            </View>
+            <View style={styles.categoryContainer}>
+                <View style={{ flexDirection: 'row', paddingHorizontal: 20 }}>
+                    <SkeletonBlock style={{ height: 40, width: 80, borderRadius: 20, marginRight: 10 }} />
+                    <SkeletonBlock style={{ height: 40, width: 120, borderRadius: 20, marginRight: 10 }} />
+                    <SkeletonBlock style={{ height: 40, width: 90, borderRadius: 20 }} />
                 </View>
-                <View style={styles.welcomeContainer}>
-                    <SkeletonBlock style={{ width: '70%', height: 30, borderRadius: 8, marginBottom: 10 }} />
-                    <SkeletonBlock style={{ width: '90%', height: 20, borderRadius: 8 }} />
-                </View>
-                <View style={styles.offerContainer}>
-                    <SkeletonBlock style={{ width: CARD_WIDTH, height: 180, borderRadius: 15 }} />
-                </View>
-                <View style={styles.categoryContainer}>
-                    <View style={{ flexDirection: 'row', paddingHorizontal: 20 }}>
-                        <SkeletonBlock style={{ height: 40, width: 80, borderRadius: 20, marginRight: 10 }} />
-                        <SkeletonBlock style={{ height: 40, width: 120, borderRadius: 20, marginRight: 10 }} />
-                        <SkeletonBlock style={{ height: 40, width: 90, borderRadius: 20 }} />
-                    </View>
-                </View>
-                <View style={{ paddingHorizontal: 15, flexDirection: 'row', justifyContent: 'space-between' }}>
-                    <ProductSkeleton isDarkMode={isDarkMode} />
-                    <ProductSkeleton isDarkMode={isDarkMode} />
-                </View>
-                 <View style={{ paddingHorizontal: 15, flexDirection: 'row', justifyContent: 'space-between', marginTop: 15 }}>
-                    <ProductSkeleton isDarkMode={isDarkMode} />
-                    <ProductSkeleton isDarkMode={isDarkMode} />
-                </View>
-            </ScrollView>
-        </SafeAreaView>
+            </View>
+            <View style={{ paddingHorizontal: 15, flexDirection: 'row', justifyContent: 'space-between' }}>
+                <ProductSkeleton isDarkMode={isDarkMode} />
+                <ProductSkeleton isDarkMode={isDarkMode} />
+            </View>
+             <View style={{ paddingHorizontal: 15, flexDirection: 'row', justifyContent: 'space-between', marginTop: 15 }}>
+                <ProductSkeleton isDarkMode={isDarkMode} />
+                <ProductSkeleton isDarkMode={isDarkMode} />
+            </View>
+        </ScrollView>
     );
 };
+// --- MODIFIED SECTION END ---
 
 
 const ProductSkeleton = ({ isDarkMode }) => {
@@ -275,7 +276,7 @@ const Homepage = ({ navigation }) => {
        setTimeout(() => {
          setDisplayedProducts(getFilteredProducts(activeCategory));
          setLoading(false);
-      }, 2000); 
+      }, 1000); 
     }
   }, [allProducts, top5ProductNames, activeCategory]);
 
@@ -564,29 +565,33 @@ const Homepage = ({ navigation }) => {
     );
   };
   
-  if (loading) {
-    return <HomepageSkeleton isDarkMode={isDarkMode} />;
-  }
-
+  // --- MODIFIED SECTION START ---
+  // The main return logic is updated to always show the BottomNav
+  // and conditionally render the skeleton or the content above it.
   return (
     <View style={styles.container}>
       <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} backgroundColor={styles.container.backgroundColor} />
       <SafeAreaView style={styles.safeArea}>
-        <FlatList
-          data={displayedProducts}
-          renderItem={renderProduct}
-          keyExtractor={(item) => item.id}
-          numColumns={2}
-          columnWrapperStyle={styles.productRow}
-          showsVerticalScrollIndicator={false}
-          ListHeaderComponent={ListHeader}
-          contentContainerStyle={{ paddingBottom: 100 }}
-          refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={isDarkMode ? '#fff' : '#D81B60'} />}
-        />
+        {loading ? (
+           <HomepageSkeleton isDarkMode={isDarkMode} />
+        ) : (
+          <FlatList
+            data={displayedProducts}
+            renderItem={renderProduct}
+            keyExtractor={(item) => item.id}
+            numColumns={2}
+            columnWrapperStyle={styles.productRow}
+            showsVerticalScrollIndicator={false}
+            ListHeaderComponent={ListHeader}
+            contentContainerStyle={{ paddingBottom: 100 }}
+            refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={isDarkMode ? '#fff' : '#D81B60'} />}
+          />
+        )}
         <BottomNav activeTab={activeTab} />
       </SafeAreaView>
     </View>
   );
+  // --- MODIFIED SECTION END ---
 };
 
 const getStyles = (isDarkMode, theme) => StyleSheet.create({
